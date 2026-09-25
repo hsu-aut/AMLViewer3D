@@ -1,6 +1,14 @@
 :root {
   --bg: #f4f5f7; --panel: #ffffff; --line: #dfe2e7; --text: #1d2330; --muted: #6a7282;
-  --accent: #2f6fdb; --accent-soft: #e6eefc; --warn: #b4531a;
+  --accent: #2f6fdb; --accent-soft: #e6eefc; --warn: #b4531a; --hover: #f0f2f5; --chip: #eef0f3;
+  --overlay: rgba(244,245,247,.85);
+  --geo-bg: #e5f4ea; --geo-fg: #25733f; --kin-bg: #fdf0e4;
+}
+:root[data-theme="dark"] {
+  --bg: #1b1d22; --panel: #25282f; --line: #3a3f49; --text: #e3e6eb; --muted: #9aa2b1;
+  --accent: #6d9cf0; --accent-soft: #2d3a52; --warn: #e39a5b; --hover: #2e323a; --chip: #343944;
+  --overlay: rgba(27,29,34,.85);
+  --geo-bg: #23402d; --geo-fg: #8fd6a4; --kin-bg: #4a3423;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--text); background: var(--bg); }
@@ -15,17 +23,17 @@ aside { background: var(--panel); overflow: hidden; display: flex; flex-directio
 #search { margin: 0 10px 8px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; font: inherit; }
 #tree { overflow: auto; flex: 1; padding-bottom: 12px; }
 .row { display: flex; align-items: center; gap: 4px; padding: 2px 8px; cursor: pointer; white-space: nowrap; }
-.row:hover { background: #f0f2f5; }
+.row:hover { background: var(--hover); }
 .row.selected { background: var(--accent-soft); }
 .twist { width: 14px; text-align: center; color: var(--muted); flex: none; }
-.badge { font-size: 10px; padding: 0 5px; border-radius: 8px; background: #eef0f3; color: var(--muted); }
-.badge.geo { background: #e5f4ea; color: #25733f; }
-.badge.kin { background: #fdf0e4; color: var(--warn); }
-.badge.impl { background: #eef0f3; color: var(--muted); }
+.badge { font-size: 10px; padding: 0 5px; border-radius: 8px; background: var(--chip); color: var(--muted); }
+.badge.geo { background: var(--geo-bg); color: var(--geo-fg); }
+.badge.kin { background: var(--kin-bg); color: var(--warn); }
+.badge.impl { background: var(--chip); color: var(--muted); }
 .children { margin-left: 12px; }
 main { position: relative; overflow: hidden; }
 #view { width: 100%; height: 100%; display: block; }
-#loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 8px; background: rgba(244,245,247,.85); }
+#loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 8px; background: var(--overlay); }
 #loading .bar { width: 280px; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
 #loading .bar div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
 #hint { position: absolute; left: 10px; bottom: 8px; color: var(--muted); font-size: 12px; }
@@ -40,7 +48,19 @@ main { position: relative; overflow: hidden; }
 .joint input[type=range] { width: 100%; }
 .joint .limits { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; }
 button { font: inherit; padding: 4px 10px; border: 1px solid var(--line); background: var(--panel); border-radius: 6px; cursor: pointer; }
-button:hover { background: #f0f2f5; }
+button:hover { background: var(--hover); }
 details summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
 footer { grid-column: 1 / 4; display: flex; gap: 18px; align-items: center; padding: 0 14px; background: var(--panel); border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
 #mechs .row { padding-left: 12px; }
+
+/* Every part has a fixed cell, so hiding one does not shift the others. */
+header { grid-row: 1; }
+#left { grid-row: 2; grid-column: 1; }
+main { grid-row: 2; grid-column: 2; }
+#right { grid-row: 2; grid-column: 3; }
+footer { grid-row: 3; }
+
+/* Inside the AutomationML Editor plugin: the editor shows the tree and the file name. */
+body.embedded #app { grid-template-columns: 0 1fr 320px; grid-template-rows: 0 1fr 24px; }
+body.embedded #left, body.embedded header { display: none; }
+input, button, textarea { color: inherit; background: var(--panel); }

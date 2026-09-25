@@ -1,0 +1,101 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows7.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <UseWPF>true</UseWPF>
+    <!-- The editor loads plugins into their own load context. -->
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+
+    <!-- Keep in step with Metadata.xml; the plugin tests check that they agree. -->
+    <Version>0.1.0</Version>
+    <Title>AML 3D Viewer</Title>
+    <Description>AutomationML Editor plugin that shows the open document with its COLLADA geometry and kinematics in 3D (IEC 62714-3). Selection follows the editor's tree and back; machine joints can be moved.</Description>
+    <PackageTags>AMLEditor; AMLEditorPlugin.Net; AutomationML; COLLADA; 3D; kinematics</PackageTags>
+    <Authors>Hamied Nabizada</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+
+    <!-- Anchored at this file: SolutionDir is empty when the project is built
+         on its own, and the package then lands in a second build tree. -->
+    <BaseOutputPath>$(MSBuildThisFileDirectory)..\build\$(MSBuildProjectName)</BaseOutputPath>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+
+    <!-- The viewer's web build (npm run build in the repository root). -->
+    <ViewerDistDir>$(MSBuildThisFileDirectory)..\..\dist\web</ViewerDistDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Aml.Editor.Plugin.Viewer3D.Tests" />
+    <InternalsVisibleTo Include="Aml.Editor.Plugin.Viewer3D.Probe" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Editor-side packages are pinned exactly. The Contract assembly must NOT
+         be shipped: the editor has its own copy, and a second one next to the
+         plugin makes the editor skip the plugin without a message. -->
+    <PackageReference Include="Aml.Editor.Plugin.Contract" Version="[4.3.0]">
+      <PrivateAssets>All</PrivateAssets>
+    </PackageReference>
+    <!-- Provided by the editor at runtime. A range: the nuspec dependency it
+         produces has to accept whatever 4.x the editor ships. -->
+    <PackageReference Include="Aml.Engine" Version="[4.*, 5.0.0)">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
+    <PackageReference Include="Aml.Editor.API" Version="[2.3.0]">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
+    <!-- Not provided by the editor: packed below. Same version as AMLOpcUa. -->
+    <PackageReference Include="Microsoft.Web.WebView2" Version="[1.0.4191.47]" GeneratePathProperty="true">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <!-- ─── Files packed into the nupkg ──────────────────────────────────────── -->
+  <ItemGroup>
+    <None Include="$(OutputPath)$(AssemblyName).deps.json" Pack="true" PackagePath="lib\$(TargetFramework)" />
+    <None Include="Metadata.xml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\LICENSE" Pack="true" PackagePath="" />
+    <None Include="..\..\THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="" />
+
+    <!-- WebView2 assemblies from the NuGet cache. Link makes
+         CopyToOutputDirectory work for an absolute Include. -->
+    <None Include="$(PkgMicrosoft_Web_WebView2)\lib\net462\Microsoft.Web.WebView2.Core.dll"
+          Link="Microsoft.Web.WebView2.Core.dll" CopyToOutputDirectory="PreserveNewest" Visible="false"
+          Pack="true" PackagePath="lib\$(TargetFramework)" />
+    <None Include="$(PkgMicrosoft_Web_WebView2)\lib\net462\Microsoft.Web.WebView2.Wpf.dll"
+          Link="Microsoft.Web.WebView2.Wpf.dll" CopyToOutputDirectory="PreserveNewest" Visible="false"
+          Pack="true" PackagePath="lib\$(TargetFramework)" />
+    <None Include="$(PkgMicrosoft_Web_WebView2)\lib\Microsoft.Web.WebView2.Core.winmd"
+          Link="Microsoft.Web.WebView2.Core.winmd" CopyToOutputDirectory="PreserveNewest" Visible="false"
+          Pack="true" PackagePath="lib\$(TargetFramework)" />
+    <!-- NuGet.Pack drops items under runtimes/win-x64/native/, so the loader is
+         staged under obj/ first and packed from there. -->
+    <None Include="$(IntermediateOutputPath)bundled\WebView2Loader.dll"
+          Link="WebView2Loader.dll" CopyToOutputDirectory="PreserveNewest" Visible="false"
+          Pack="true" PackagePath="lib\$(TargetFramework)\WebView2Loader.dll" />
+  </ItemGroup>
+
+  <!-- ─── The viewer, shipped as content next to the plugin ────────────────── -->
+  <ItemGroup>
+    <None Include="$(ViewerDistDir)\**\*"
+          Link="viewer-assets\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" Visible="false"
+          Pack="true"
+          PackagePath="lib\$(TargetFramework)\viewer-assets\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <!-- A plugin without the viewer loads and shows a blank panel. Fail the build instead. -->
+  <Target Name="VerifyViewerBundle" BeforeTargets="BeforeBuild">
+    <Error Condition="!Exists('$(ViewerDistDir)\index.html')"
+           Text="The viewer is not built. Run 'npm install' and 'npm run build' in the repository root." />
+  </Target>
+
+  <Target Name="StageWebView2Loader" BeforeTargets="BeforeResolveReferences">
+    <Copy SourceFiles="$(PkgMicrosoft_Web_WebView2)\runtimes\win-x64\native\WebView2Loader.dll"
+          DestinationFolder="$(IntermediateOutputPath)bundled\"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

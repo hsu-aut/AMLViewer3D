@@ -1,6 +1,9 @@
 // Viewer page: instance hierarchy on the left, 3D view in the middle, details and joint
 // sliders on the right. Selection works both ways between tree and view.
-// The document comes from ?aml=<url>, default data/robotcell/AmlDocument.aml.
+//
+// On its own, the page opens ?aml=<url> (default data/robotcell/AmlDocument.aml).
+// Inside a host (the AutomationML Editor plugin) it waits for the host to send the
+// document, leaves the tree to the editor, and reports selections back (see host.ts).
 import './style.css';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -8,16 +11,15 @@ import { parseAml, type AmlDocument, type AmlElement } from '../aml/reader';
 import { ColladaStore } from '../collada/store';
 import { WorkerPool } from '../collada/pool';
 import { buildCell, elementOf, type Cell, type CellElement, type CellJoint, type Mechanism } from '../scene/cell';
+import { isHosted, onHostMessage, post } from './host';
 
 const $ = (id: string) => document.getElementById(id)!;
-const amlUrl = new URL(new URLSearchParams(location.search).get('aml') || 'data/robotcell/AmlDocument.aml', location.href).href;
 
 // ---- 3D setup (Z up, metres) ------------------------------------------------------------
 const canvas = $('view') as HTMLCanvasElement;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xe9ecf1);
 const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000);
 camera.up.set(0, 0, 1);
 camera.position.set(8, -14, 9);
@@ -27,9 +29,18 @@ scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8f99, 1.6));
 const sun = new THREE.DirectionalLight(0xffffff, 1.6);
 sun.position.set(10, -15, 25);
 scene.add(sun);
-const grid = new THREE.GridHelper(40, 40, 0xb9bec8, 0xd3d7de);
-grid.rotation.x = Math.PI / 2;
-scene.add(grid);
+let grid: THREE.GridHelper | null = null;
+
+function setTheme(theme: 'dark' | 'light') {
+  document.documentElement.dataset.theme = theme;
+  const dark = theme === 'dark';
+  scene.background = new THREE.Color(dark ? 0x23262d : 0xe9ecf1);
+  if (grid) { scene.remove(grid); grid.dispose(); }
+  grid = new THREE.GridHelper(40, 40, dark ? 0x4a4f59 : 0xb9bec8, dark ? 0x353a43 : 0xd3d7de);
+  grid.rotation.x = Math.PI / 2;
+  scene.add(grid);
+}
+setTheme(matchMedia('(prefers-color-scheme: dark)').matches && !isHosted ? 'dark' : 'light');
 
 function resize() {
   const { clientWidth: w, clientHeight: h } = canvas.parentElement!;
@@ -70,6 +81,7 @@ function badgeFor(el: AmlElement) {
 function buildTree(aml: AmlDocument) {
   const tree = $('tree');
   tree.innerHTML = '';
+  rows.clear();
   const make = (el: AmlElement, parentBox: HTMLElement, depth: number) => {
     const row = document.createElement('div');
     row.className = 'row';
@@ -83,8 +95,8 @@ function buildTree(aml: AmlDocument) {
     parentBox.appendChild(box);
     rows.set(el.id, { row, box, el });
     row.querySelector('.twist')!.addEventListener('click', ev => { ev.stopPropagation(); toggle(el.id); });
-    row.addEventListener('click', () => select(el.id, true));
-    row.addEventListener('dblclick', () => { const e = cell!.elements.get(el.id); if (e) focus(e.mapped ?? e.group); });
+    row.addEventListener('click', () => select(el.id, { fromTree: true }));
+    row.addEventListener('dblclick', () => { const e = cell?.elements.get(el.id); if (e) focus(e.mapped ?? e.group); });
     for (const c of el.children) make(c, box, depth + 1);
   };
   for (const ih of aml.hierarchies) for (const el of ih.children) make(el, tree, 0);
@@ -113,17 +125,23 @@ $('search').addEventListener('input', ev => {
 // ---- Selection ----------------------------------------------------------------------------
 function hasGeometry(object: THREE.Object3D) { let found = false; object.traverse(o => { if ((o as THREE.Mesh).isMesh) found = true; }); return found; }
 
-function select(id: string | null, fromTree = false) {
+/**
+ * Selects an element in tree, view and details. A selection made here is reported to the
+ * host; one that came from the host is not sent back.
+ */
+function select(id: string | null, { fromTree = false, fromHost = false } = {}) {
+  const changed = id !== selected;
   if (selected) rows.get(selected)?.row.classList.remove('selected');
   selected = id;
   if (helper) { scene.remove(helper); helper.dispose(); helper = null; }
   const entry = id ? cell?.elements.get(id) : undefined;
-  if (!entry) { $('details').innerHTML = '<div class="sub">Nothing selected.</div>'; return; }
+  if (!fromHost && changed) post({ type: 'selected', id: entry ? id : null });
+  if (!entry) { selected = null; $('details').innerHTML = '<div class="sub">Nothing selected.</div>'; return; }
   const r = rows.get(entry.el.id);
   if (r) {
     r.row.classList.add('selected');
     for (let p = r.el.parent; p; p = p.parent) toggle(p.id, true);
-    if (!fromTree) r.row.scrollIntoView({ block: 'center' });
+    if (!fromTree && !isHosted) r.row.scrollIntoView({ block: 'center' });
   }
   const object = entry.mapped ?? (entry.instance || hasGeometry(entry.group) ? entry.group : null);
   if (object) { helper = new THREE.BoxHelper(object, 0x2f6fdb); scene.add(helper); }
@@ -196,6 +214,7 @@ function slider(j: CellJoint) {
 
 function buildMechanismList() {
   const box = $('mechs');
+  box.innerHTML = '';
   for (const m of cell!.mechanisms) {
     const row = document.createElement('div');
     row.className = 'row';
@@ -230,7 +249,38 @@ canvas.addEventListener('dblclick', ev => {
 });
 
 // ---- Loading ------------------------------------------------------------------------------
-async function start() {
+
+/** Frees the GPU and memory of the scene shown so far. Copies share geometries and materials. */
+function disposeCell() {
+  if (!cell) return;
+  select(null, { fromHost: true });
+  scene.remove(cell.world);
+  const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
+  cell.world.traverse(o => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    geometries.add(m.geometry);
+    for (const mat of [m.material].flat()) materials.add(mat);
+  });
+  geometries.forEach(g => g.dispose());
+  materials.forEach(m => m.dispose());
+  cell = null;
+  (window as unknown as { cell: Cell | null }).cell = null;
+  $('tree').innerHTML = '';
+  $('mechs').innerHTML = '';
+  $('status').textContent = '';
+}
+
+let opening = 0;
+
+/**
+ * Shows an AML document. `amlUrl` is where the text came from, or would have come from:
+ * COLLADA references are resolved against it.
+ */
+async function openDocument(amlText: string, amlUrl: string) {
+  const ticket = ++opening;
+  disposeCell();
+  $('loading').style.display = '';
   const t0 = performance.now();
   const pool = typeof Worker !== 'undefined' ? new WorkerPool() : undefined;
   const store = new ColladaStore({ offload: pool });
@@ -240,11 +290,11 @@ async function start() {
     ($('loading-bar') as HTMLElement).style.width = known ? `${((100 * done) / known).toFixed(0)}%` : '0';
   }, 150);
   try {
-    const response = await fetch(amlUrl);
-    if (!response.ok) throw new Error(`${response.status} ${amlUrl}`);
-    const aml = parseAml(await response.text());
+    const aml = parseAml(amlText);
     $('file').textContent = `${decodeURIComponent(amlUrl.split('/').pop() ?? '')} · CAEX ${aml.schemaVersion}`;
-    cell = await buildCell(aml, amlUrl, store);
+    const built = await buildCell(aml, amlUrl, store);
+    if (ticket !== opening) return;                       // a newer document was sent meanwhile
+    cell = built;
     (window as unknown as { cell: Cell }).cell = cell;   // for the console and browser tests
     scene.add(cell.world);
     focus(cell.world, 0.9);
@@ -256,22 +306,49 @@ async function start() {
       if (g) tris += (g.index?.count ?? g.attributes.position?.count ?? 0) / 3;
     });
     const issues = [...store.stats.missing, ...cell.problems];
+    const seconds = (performance.now() - t0) / 1000;
     $('status').innerHTML = [
       `${aml.byId.size} elements`,
       `${store.stats.files} COLLADA files, ${(store.stats.bytes / 1e6).toFixed(0)} MB${pool ? `, ${pool.size} workers` : ''}`,
       `${Math.round(tris).toLocaleString()} triangles`,
       `${cell.mechanisms.length} mechanisms, ${cell.attachments.length} attached parts`,
-      `ready in ${((performance.now() - t0) / 1000).toFixed(1)} s`,
+      `ready in ${seconds.toFixed(1)} s`,
       issues.length ? `<span style="color:var(--warn)" title="${esc(issues.slice(0, 30).join('\n'))}">${issues.length} problems</span>` : 'no problems',
     ].join(' · ');
     $('loading').style.display = 'none';
+    post({
+      type: 'loaded',
+      summary: {
+        elements: aml.byId.size, files: store.stats.files, megabytes: Math.round(store.stats.bytes / 1e6),
+        triangles: Math.round(tris), mechanisms: cell.mechanisms.length, attached: cell.attachments.length, seconds: +seconds.toFixed(1),
+      },
+      problems: issues.slice(0, 200),
+    });
   } catch (e) {
     console.error(e);
     $('loading-text').textContent = `Failed: ${(e as Error).message}`;
+    post({ type: 'error', message: `Could not show the document: ${(e as Error).message}` });
   } finally {
     clearInterval(progress);
     pool?.dispose();
   }
 }
 
-start();
+if (isHosted) {
+  document.body.classList.add('embedded');
+  $('loading-text').textContent = 'Waiting for a document…';
+  window.addEventListener('error', e => post({ type: 'error', message: String(e.message) }));
+  window.addEventListener('unhandledrejection', e => post({ type: 'error', message: String((e.reason as Error)?.message ?? e.reason) }));
+  onHostMessage(message => {
+    if (message.type === 'open') openDocument(message.aml, new URL(message.name, message.base).href);
+    else if (message.type === 'select') select(message.id, { fromHost: true });
+    else if (message.type === 'setTheme') setTheme(message.theme);
+  });
+  post({ type: 'ready', url: location.href });
+} else {
+  const url = new URL(new URLSearchParams(location.search).get('aml') || 'data/robotcell/AmlDocument.aml', location.href).href;
+  fetch(url)
+    .then(r => { if (!r.ok) throw new Error(`${r.status} ${url}`); return r.text(); })
+    .then(text => openDocument(text, url))
+    .catch(e => { $('loading-text').textContent = `Failed: ${(e as Error).message}`; });
+}

@@ -9,8 +9,9 @@ robot flange, a robot on the carriage of a linear axis.
 
 Status: first version, working name. It grew out of a spike with the
 AutomationML e.V. example "Robot cell" (406 COLLADA files, 7.6 million
-triangles, 28 mechanisms, 981 joints), which it now opens in about 5 s. Next: a
-plugin for the AutomationML Editor.
+triangles, 28 mechanisms, 981 joints), which it now opens in about 5 s. It also
+runs inside the AutomationML Editor as a plugin (see below); the plugin has been
+checked in a host of its own, not yet in the editor itself.
 
 ```bash
 npm install
@@ -75,6 +76,42 @@ skeleton and assembles the scene.
 `bench/` measures this (`npm run dev`, then `node bench/run.mjs`). A cache of the
 built scene would save most of the rest when a document is opened again; it is left
 out for now because stale caches are a class of bug of their own.
+
+## AutomationML Editor plugin
+
+`plugin/` holds a plugin for the AutomationML Editor 6.4 that shows the open
+document in a WebView2 with this page:
+
+- The page gets the AML text the editor holds in memory, so **Reload** shows
+  changes not yet saved. The COLLADA files come from the document's folder on
+  disk (a second virtual host); an `.amlx` container is unpacked once into
+  `%LOCALAPPDATA%\AmlViewer3D\amlx`.
+- A click on a part selects its element in the editor's tree
+  (`ISupportsSelection`); a selection in the tree, also of an interface or
+  attribute, marks the element's part in 3D. Neither direction echoes back.
+- The page leaves the tree to the editor and follows the editor's light or dark
+  theme (read from its MahApps background).
+
+```bash
+npm run build                                   # the page, packed with the plugin
+dotnet test plugin/Aml.Editor.Plugin.Viewer3D.slnx
+```
+
+The build writes `plugin/build/Aml.Editor.Plugin.Viewer3D/Debug/Aml.Editor.Plugin.Viewer3D.0.1.0.nupkg`;
+install it through the editor's PlugIn Manager with that folder as a source. The
+package tests check what the editor needs and does not report when it is missing:
+no second copy of the contract or of Aml.Engine, the page with its worker script,
+relative asset paths, a display name the editor accepts.
+
+`plugin/Aml.Editor.Plugin.Viewer3D.Probe` hosts the plugin in a window of its own
+the way the editor does and checks it end to end: the page loads the document,
+fills the view, a click in 3D reaches the editor as a selection, a selection from
+the editor marks the part, the dark theme arrives, reload works. With the robot
+cell, as .aml and as .amlx, all checks pass:
+
+```bash
+dotnet run --project plugin/Aml.Editor.Plugin.Viewer3D.Probe -- data/robotcell/AmlDocument.aml test/output/probe
+```
 
 ## Test data
 

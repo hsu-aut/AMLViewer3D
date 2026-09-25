@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PlugInPackageMetaData xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                       xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <PackageName>Aml.Editor.Plugin.Viewer3D</PackageName>
+  <DisplayName>AML3DViewer</DisplayName>
+  <Version>0.1.0</Version>
+  <Author>Hamied Nabizada</Author>
+  <Description>AutomationML Editor plugin that shows the open document with its COLLADA geometry and kinematics in 3D (IEC 62714-3). Selection follows the editor's tree and back; machine joints can be moved.</Description>
+  <MinimumEditorVersion>6.4.0.0</MinimumEditorVersion>
+</PlugInPackageMetaData>

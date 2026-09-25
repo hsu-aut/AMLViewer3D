@@ -5,3 +5,9 @@ coverage/
 # Example data with its own licence (for example the AutomationML e.V. robot cell, by-nc-sa)
 data/
 test/output/
+
+# .NET build output of the editor plugin
+plugin/build/
+bin/
+obj/
+*.user

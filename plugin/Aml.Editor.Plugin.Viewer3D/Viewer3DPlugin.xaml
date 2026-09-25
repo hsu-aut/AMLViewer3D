@@ -1,0 +1,43 @@
+<aml:PluginViewBase
+    x:Class="Aml.Editor.Plugin.Viewer3D.Viewer3DPlugin"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+    xmlns:aml="clr-namespace:Aml.Editor.Plugin.WPFBase;assembly=Aml.Editor.Plugin.Contract">
+
+    <TabControl>
+        <TabItem Header="3D">
+            <DockPanel>
+                <!-- Everything lives in this toolbar, nothing on the editor's toolbar:
+                     the editor shows the commands of one plugin at a time there. -->
+                <ToolBar DockPanel.Dock="Top">
+                    <Button Content="Reload" Click="ReloadButton_Click"
+                            ToolTip="Show the document again as the editor holds it now, with changes not yet saved."/>
+                    <Separator/>
+                    <TextBlock x:Name="StatusLabel" VerticalAlignment="Center" Margin="6,0" Foreground="#666" FontStyle="Italic"
+                               TextTrimming="CharacterEllipsis"/>
+                </ToolBar>
+                <Grid>
+                    <wv2:WebView2 x:Name="Browser"/>
+                    <Border x:Name="Placeholder" Background="#F8F8F8">
+                        <TextBlock x:Name="PlaceholderText" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#666"
+                                   TextWrapping="Wrap" MaxWidth="480" TextAlignment="Center"
+                                   Text="Open an AML document. Its COLLADA geometry is shown here in 3D."/>
+                    </Border>
+                </Grid>
+            </DockPanel>
+        </TabItem>
+
+        <TabItem Header="Log">
+            <DockPanel Margin="8">
+                <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                    <CheckBox x:Name="DebugToggle" Content="Verbose log" Margin="0,0,12,4"
+                              Checked="DebugToggle_Changed" Unchecked="DebugToggle_Changed"/>
+                    <Button Content="Open log folder" Padding="8,1" Click="OpenLogFolder_Click"/>
+                </WrapPanel>
+                <TextBox x:Name="LogBox" IsReadOnly="True" FontFamily="Consolas" FontSize="11"
+                         VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"/>
+            </DockPanel>
+        </TabItem>
+    </TabControl>
+</aml:PluginViewBase>
