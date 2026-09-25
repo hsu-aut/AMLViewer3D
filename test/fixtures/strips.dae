@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<COLLADA xmlns="http://www.collada.org/2008/03/COLLADASchema" version="1.5.0">
+  <asset><unit meter="1"/><up_axis>Z_UP</up_axis></asset>
+  <library_effects><effect id="orange_fx"><profile_COMMON><technique sid="t"><lambert><diffuse><color>0.9 0.5 0.1 1</color></diffuse></lambert></technique></profile_COMMON></effect></library_effects>
+  <library_materials><material id="orange"><instance_effect url="#orange_fx"/></material></library_materials>
+  <library_geometries><geometry id="flat"><mesh>
+    <source id="flat_pos"><float_array id="flat_pos_a" count="33">0 0 0 0 1 0 1 0 0 1 1 0 2 0 0 2 1 0 5 0.5 0 4 0 0 6 0 0 6 1 0 4 1 0</float_array>
+      <technique_common><accessor source="#flat_pos_a" count="11" stride="3"><param name="X" type="float"/><param name="Y" type="float"/><param name="Z" type="float"/></accessor></technique_common></source>
+    <source id="flat_nrm"><float_array id="flat_nrm_a" count="3">0 0 1</float_array>
+      <technique_common><accessor source="#flat_nrm_a" count="1" stride="3"><param name="X" type="float"/><param name="Y" type="float"/><param name="Z" type="float"/></accessor></technique_common></source>
+    <vertices id="flat_v"><input semantic="POSITION" source="#flat_pos"/></vertices>
+    <tristrips material="m" count="2">
+      <input semantic="VERTEX" source="#flat_v" offset="0"/><input semantic="NORMAL" source="#flat_nrm" offset="1"/>
+      <p>0 0 1 0 2 0 3 0 4 0 5 0</p>
+      <p>0 0 1 0 1 0 2 0</p>
+    </tristrips>
+    <trifans material="m" count="1">
+      <input semantic="VERTEX" source="#flat_v" offset="0"/><input semantic="NORMAL" source="#flat_nrm" offset="1"/>
+      <p>6 0 7 0 8 0 9 0 10 0</p>
+    </trifans>
+  </mesh></geometry></library_geometries>
+  <library_visual_scenes><visual_scene id="s"><node id="flat_node"><instance_geometry url="#flat"><bind_material><technique_common><instance_material symbol="m" target="#orange"/></technique_common></bind_material></instance_geometry></node></visual_scene></library_visual_scenes>
+  <scene><instance_visual_scene url="#s"/></scene>
+</COLLADA>

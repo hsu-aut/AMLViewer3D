@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AML 3D Viewer</title>
+<link rel="icon" href="data:,">
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>AML 3D Viewer</h1>
+    <span class="file" id="file"></span>
+  </header>
+  <aside id="left">
+    <div class="section-title">Instance hierarchy</div>
+    <input id="search" type="search" placeholder="Filter by name">
+    <div id="tree"></div>
+  </aside>
+  <main>
+    <canvas id="view"></canvas>
+    <div id="loading"><div id="loading-text">Loading…</div><div class="bar"><div id="loading-bar"></div></div></div>
+    <div id="hint">Click a part to select it · drag to orbit · right drag to pan · wheel to zoom · double click to focus</div>
+  </main>
+  <aside id="right">
+    <div class="section-title">Selection</div>
+    <div id="details"><div class="sub">Nothing selected.</div></div>
+    <div class="section-title">Mechanisms</div>
+    <div id="mechs"></div>
+  </aside>
+  <footer id="status"></footer>
+</div>
+<script type="module" src="/src/app/main.ts"></script>
+</body>
+</html>

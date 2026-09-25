@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<COLLADA xmlns="http://www.collada.org/2008/03/COLLADASchema" version="1.5.0">
+  <asset><unit meter="1"/><up_axis>Z_UP</up_axis></asset>
+  <library_visual_scenes><visual_scene id="asm_scene">
+    <node id="asm" name="asm"><translate>1 0 0</translate><instance_node url="part.dae#part_node"/></node>
+  </visual_scene></library_visual_scenes>
+  <scene><instance_visual_scene url="#asm_scene"/></scene>
+</COLLADA>

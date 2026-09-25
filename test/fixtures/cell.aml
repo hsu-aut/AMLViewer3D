@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CAEXFile SchemaVersion="3.0" FileName="cell.aml" xmlns="http://www.dke.de/CAEX">
+  <SuperiorStandardVersion>AutomationML 2.10</SuperiorStandardVersion>
+  <InstanceHierarchy Name="Cell" ID="ih-1">
+    <Version>1.0</Version>
+    <InternalElement Name="Cell" ID="cell">
+      <InternalElement Name="FlatArm" ID="flat-arm">
+        <Attribute Name="Frame"><Attribute Name="x" AttributeDataType="xs:double"><Value>5</Value></Attribute><Attribute Name="y" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="z" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="rx" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="ry" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="rz" AttributeDataType="xs:double"><Value>90</Value></Attribute></Attribute>
+        <ExternalInterface Name="Representation" ID="flat-arm-geo" RefBaseClassPath="AutomationMLInterfaceClassLib/AutomationMLBaseInterface/ExternalDataConnector/COLLADAInterface">
+          <Attribute Name="refURI" AttributeDataType="xs:anyURI"><Value>arm_flat.dae</Value></Attribute>
+          <Attribute Name="refType" AttributeDataType="xs:string"><Value>explicit</Value></Attribute>
+        </ExternalInterface>
+        <InternalElement Name="Link2" ID="flat-link2">
+          <Attribute Name="Frame"><Attribute Name="x" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="y" AttributeDataType="xs:double"><Value>1</Value></Attribute><Attribute Name="z" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="rx" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="ry" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="rz" AttributeDataType="xs:double"><Value>0</Value></Attribute></Attribute>
+          <ExternalInterface Name="Representation" ID="flat-link2-ref" RefBaseClassPath="AutomationMLInterfaceClassLib/AutomationMLBaseInterface/ExternalDataConnector/COLLADAInterface">
+          <Attribute Name="refURI" AttributeDataType="xs:anyURI"><Value>arm_flat.dae#link2</Value></Attribute>
+          <Attribute Name="refType" AttributeDataType="xs:string"><Value>implicit</Value></Attribute>
+        </ExternalInterface>
+          <InternalElement Name="Link2_Tool" ID="flat-tool">
+            <ExternalInterface Name="Representation" ID="flat-tool-ref" RefBaseClassPath="AutomationMLInterfaceClassLib/AutomationMLBaseInterface/ExternalDataConnector/COLLADAInterface">
+          <Attribute Name="refURI" AttributeDataType="xs:anyURI"><Value>arm_flat.dae#link2</Value></Attribute>
+          <Attribute Name="refType" AttributeDataType="xs:string"><Value>implicit</Value></Attribute>
+          <Attribute Name="target" AttributeDataType="xs:string"><Value>./tool0</Value></Attribute>
+        </ExternalInterface>
+            <ExternalInterface Name="ToGripper" ID="flat-tool-att" RefBaseClassPath="AutomationMLInterfaceClassLib/AutomationMLBaseInterface/AttachmentInterface"/>
+          </InternalElement>
+          <InternalElement Name="Link2_Marker" ID="flat-marker">
+            <Attribute Name="Frame"><Attribute Name="x" AttributeDataType="xs:double"><Value>1</Value></Attribute><Attribute Name="y" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="z" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="rx" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="ry" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="rz" AttributeDataType="xs:double"><Value>0</Value></Attribute></Attribute>
+          </InternalElement>
+        </InternalElement>
+      </InternalElement>
+      <InternalElement Name="Gripper" ID="gripper">
+        <Attribute Name="Frame"><Attribute Name="x" AttributeDataType="xs:double"><Value>4</Value></Attribute><Attribute Name="y" AttributeDataType="xs:double"><Value>1</Value></Attribute><Attribute Name="z" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="rx" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="ry" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="rz" AttributeDataType="xs:double"><Value>90</Value></Attribute></Attribute>
+        <ExternalInterface Name="Representation" ID="gripper-geo" RefBaseClassPath="AutomationMLInterfaceClassLib/AutomationMLBaseInterface/ExternalDataConnector/COLLADAInterface">
+          <Attribute Name="refURI" AttributeDataType="xs:anyURI"><Value>gripper.dae</Value></Attribute>
+          <Attribute Name="refType" AttributeDataType="xs:string"><Value>explicit</Value></Attribute>
+        </ExternalInterface>
+        <InternalElement Name="Gripper_Mount" ID="gripper-mount">
+          <Attribute Name="Frame"><Attribute Name="x" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="y" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="z" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="rx" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="ry" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="rz" AttributeDataType="xs:double"><Value>0</Value></Attribute></Attribute>
+          <ExternalInterface Name="ToArm" ID="gripper-att" RefBaseClassPath="AutomationMLInterfaceClassLib/AutomationMLBaseInterface/AttachmentInterface"/>
+        </InternalElement>
+      </InternalElement>
+      <InternalElement Name="NestedArm" ID="nested-arm">
+        <Attribute Name="Frame"><Attribute Name="x" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="y" AttributeDataType="xs:double"><Value>-5</Value></Attribute><Attribute Name="z" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="rx" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="ry" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="rz" AttributeDataType="xs:double"><Value>0</Value></Attribute></Attribute>
+        <ExternalInterface Name="Representation" ID="nested-arm-geo" RefBaseClassPath="AutomationMLInterfaceClassLib/AutomationMLBaseInterface/ExternalDataConnector/COLLADAInterface">
+          <Attribute Name="refURI" AttributeDataType="xs:anyURI"><Value>arm_nested.dae</Value></Attribute>
+          <Attribute Name="refType" AttributeDataType="xs:string"><Value>explicit</Value></Attribute>
+        </ExternalInterface>
+        <InternalElement Name="Link2" ID="nested-link2">
+          <Attribute Name="Frame"><Attribute Name="x" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="y" AttributeDataType="xs:double"><Value>1</Value></Attribute><Attribute Name="z" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="rx" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="ry" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="rz" AttributeDataType="xs:double"><Value>0</Value></Attribute></Attribute>
+          <ExternalInterface Name="Representation" ID="nested-link2-ref" RefBaseClassPath="AutomationMLInterfaceClassLib/AutomationMLBaseInterface/ExternalDataConnector/COLLADAInterface">
+          <Attribute Name="refURI" AttributeDataType="xs:anyURI"><Value>arm_nested.dae#link2</Value></Attribute>
+          <Attribute Name="refType" AttributeDataType="xs:string"><Value>implicit</Value></Attribute>
+        </ExternalInterface>
+        </InternalElement>
+      </InternalElement>
+      <InternalElement Name="Tilted" ID="tilted">
+        <Attribute Name="Frame"><Attribute Name="x" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="y" AttributeDataType="xs:double"><Value>0</Value></Attribute><Attribute Name="z" AttributeDataType="xs:double"><Value>3</Value></Attribute><Attribute Name="rx" AttributeDataType="xs:double"><Value>90</Value></Attribute><Attribute Name="ry" AttributeDataType="xs:double"><Value>90</Value></Attribute><Attribute Name="rz" AttributeDataType="xs:double"><Value>0</Value></Attribute></Attribute>
+        <ExternalInterface Name="Representation" ID="tilted-geo" RefBaseClassPath="AutomationMLInterfaceClassLib/AutomationMLBaseInterface/ExternalDataConnector/COLLADAInterface">
+          <Attribute Name="refURI" AttributeDataType="xs:anyURI"><Value>gripper.dae</Value></Attribute>
+          <Attribute Name="refType" AttributeDataType="xs:string"><Value>explicit</Value></Attribute>
+        </ExternalInterface>
+      </InternalElement>
+      <InternalLink Name="GripperOnArm" RefPartnerSideA="flat-tool-att" RefPartnerSideB="gripper-att"/>
+    </InternalElement>
+  </InstanceHierarchy>
+</CAEXFile>

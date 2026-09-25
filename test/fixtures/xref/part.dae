@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<COLLADA xmlns="http://www.collada.org/2008/03/COLLADASchema" version="1.5.0">
+  <asset><unit meter="0.001"/><up_axis>Z_UP</up_axis></asset>
+  <library_effects><effect id="grey_fx"><profile_COMMON><technique sid="t"><lambert><diffuse><color>0.6 0.6 0.6 1</color></diffuse></lambert></technique></profile_COMMON></effect></library_effects>
+  <library_materials><material id="grey"><instance_effect url="#grey_fx"/></material></library_materials>
+  <library_geometries><geometry id="cube"><mesh>
+      <source id="cube_pos"><float_array id="cube_pos_a" count="24">0 0 0 1000 0 0 1000 1000 0 0 1000 0 0 0 1000 1000 0 1000 1000 1000 1000 0 1000 1000</float_array>
+        <technique_common><accessor source="#cube_pos_a" count="8" stride="3"><param name="X" type="float"/><param name="Y" type="float"/><param name="Z" type="float"/></accessor></technique_common></source>
+      <vertices id="cube_v"><input semantic="POSITION" source="#cube_pos"/></vertices>
+      <triangles material="m" count="12"><input semantic="VERTEX" source="#cube_v" offset="0"/><p>0 2 1 0 3 2 4 5 6 4 6 7 0 1 5 0 5 4 1 2 6 1 6 5 2 3 7 2 7 6 3 0 4 3 4 7</p></triangles>
+    </mesh></geometry></library_geometries>
+  <library_nodes>
+    <node id="part_node" name="part"><translate>0 0 500</translate><instance_geometry url="#cube"><bind_material><technique_common><instance_material symbol="m" target="#grey"/></technique_common></bind_material></instance_geometry></node>
+  </library_nodes>
+  <library_visual_scenes><visual_scene id="part_scene"><node id="part_vs"><instance_node url="#part_node"/></node></visual_scene></library_visual_scenes>
+  <scene><instance_visual_scene url="#part_scene"/></scene>
+</COLLADA>
