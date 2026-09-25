@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<COLLADA xmlns="http://www.collada.org/2008/03/COLLADASchema" version="1.5.0">
+  <asset><unit meter="1"/><up_axis>Z_UP</up_axis></asset>
+  <library_effects><effect id="red_fx"><profile_COMMON><technique sid="t"><lambert><diffuse><color>0.8 0.2 0.2 1</color></diffuse></lambert></technique></profile_COMMON></effect></library_effects>
+  <library_materials><material id="red"><instance_effect url="#red_fx"/></material></library_materials>
+  <library_geometries><geometry id="poly"><mesh>
+    <source id="poly_pos"><float_array id="poly_pos_a" count="21">0 0 0 1 0 0 1 1 0 0 1 0 2 0 0 3 0 0 2 1 0</float_array>
+      <technique_common><accessor source="#poly_pos_a" count="7" stride="3"><param name="X" type="float"/><param name="Y" type="float"/><param name="Z" type="float"/></accessor></technique_common></source>
+    <vertices id="poly_v"><input semantic="POSITION" source="#poly_pos"/></vertices>
+    <polygons material="m" count="2"><input semantic="VERTEX" source="#poly_v" offset="0"/><p>0 1 2 3</p><p>4 5 6</p></polygons>
+  </mesh></geometry></library_geometries>
+  <library_visual_scenes><visual_scene id="s"><node id="poly_node"><instance_geometry url="#poly"><bind_material><technique_common><instance_material symbol="m" target="#red"/></technique_common></bind_material></instance_geometry></node></visual_scene></library_visual_scenes>
+  <scene><instance_visual_scene url="#s"/></scene>
+</COLLADA>

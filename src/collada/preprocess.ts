@@ -1,19 +1,28 @@
-// Text rewrites applied to a COLLADA document before three.js parses it. Each one works
-// around something three.js' COLLADA parser (r186) does not handle the way AML files need:
+// Rewrites applied to a COLLADA document before three.js parses it. Each one works around
+// something three.js' COLLADA parser (r186) does not handle the way AML files need, or
+// makes loading faster:
 //
+//  - Number lists (<float_array>, <p>, <vcount>) are most of a file. They are read into
+//    typed arrays here and replaced by a short token, so the XML parser only sees the
+//    markup (see parser.ts for the other half).
+//  - <tristrips> and <trifans> are ignored by three.js; they become <triangles>.
+//    <polygons> with one <p> per polygon keeps only the last polygon in three.js; it
+//    becomes <polylist>.
 //  - <instance_node>: three.js resolves only references inside the file, and when a node
 //    holds exactly one instance it merges the two and loses the inner node's name and
 //    transform. Every <instance_node> becomes a placeholder node, filled afterwards (see
 //    store.ts) with a copy of the referenced node from this or another file.
 //  - Nodes without id overwrite each other in three.js' node table; they get one. Nodes
 //    with only a sid (attachment points, frames of interest) keep the sid as id.
-//  - Names do survive copying inside three.js, so every node's name carries its id.
-//  - <tristrips> and <trifans> are ignored by three.js; they become <triangles>.
+//  - Names survive copying inside three.js, so every node's name carries its id.
 //  - three.js' own kinematics fails on real files; <instance_kinematics_scene> is removed
-//    here and read separately (kinematics.ts).
+//    and read separately (kinematics.ts) from `reduced`.
+
+import { parseFloatList, parseIntList } from './numbers';
 
 export const NODE_TAG = '@';
 export const PLACEHOLDER = /^@__ref_(\d+)$/;
+export const ARRAY_TOKEN = /^\s*§(\d+)\s*$/;
 
 export interface NodeRef {
   /** File part of the url, empty for a node in the same file. */
@@ -21,14 +30,53 @@ export interface NodeRef {
   id: string;
 }
 
-const INSTANCE_NODE = /<instance_node\b[^>]*?\burl="([^"#]*)#([^"]*)"[^>]*?(?:\/>|>[\s\S]*?<\/instance_node>)/g;
+export type NumberArray = Float32Array | Int32Array;
 
-export function preprocess(text: string): { text: string; refs: NodeRef[] } {
+export interface Preprocessed {
+  /** The document for three.js: tokens instead of number lists, all rewrites applied. */
+  text: string;
+  /** The document with tokens instead of number lists and nothing else changed. */
+  reduced: string;
+  arrays: NumberArray[];
+  refs: NodeRef[];
+}
+
+const INSTANCE_NODE = /<instance_node\b[^>]*?\burl="([^"#]*)#([^"]*)"[^>]*?(?:\/>|>[\s\S]*?<\/instance_node>)/g;
+const NUMBER_LIST = /<(float_array|p|vcount)\b([^>]*)>([^<]*)<\/\1>/g;
+const token = (k: number) => `§${k}`;
+
+export function preprocess(source: string): Preprocessed {
+  const arrays: NumberArray[] = [];
+  const reduced = source.replace(/^﻿/, '').replace(NUMBER_LIST, (_m, tag: string, attrs: string, body: string) => {
+    arrays.push(tag === 'float_array' ? parseFloatList(body) : parseIntList(body));
+    return `<${tag}${attrs}>${token(arrays.length - 1)}</${tag}>`;
+  });
+  const lookup = (p: string) => arrays[+(ARRAY_TOKEN.exec(p)?.[1] ?? NaN)] as Int32Array | undefined;
+
   const refs: NodeRef[] = [];
   let anonymous = 0;
-  const out = text
-    .replace(/^﻿/, '')
-    .replace(INSTANCE_NODE, (_, file: string, id: string) => {
+  const text = reduced
+    .replace(/<(tristrips|trifans)\b([^>]*)>([\s\S]*?)<\/\1>/g, (_m, kind: string, attrs: string, body: string) => {
+      const inputs = body.match(/<input\b[^>]*\/>/g) || [];
+      const lists = [...body.matchAll(/<p>([^<]*)<\/p>/g)].map(m => lookup(m[1]) ?? new Int32Array(0));
+      const indices = stripIndices(kind as 'tristrips' | 'trifans', lists, strideOf(inputs));
+      arrays.push(indices);
+      const rest = attrs.replace(/\s+count="[^"]*"/, '');
+      return `<triangles${rest} count="${indices.length / strideOf(inputs) / 3}">${inputs.join('')}<p>${token(arrays.length - 1)}</p></triangles>`;
+    })
+    .replace(/<polygons\b([^>]*)>([\s\S]*?)<\/polygons>/g, (_m, attrs: string, body: string) => {
+      const inputs = body.match(/<input\b[^>]*\/>/g) || [];
+      const stride = strideOf(inputs);
+      const lists = [...body.matchAll(/<p>([^<]*)<\/p>/g)].map(m => lookup(m[1]) ?? new Int32Array(0));
+      const vcount = Int32Array.from(lists, l => l.length / stride);
+      const p = new Int32Array(lists.reduce((n, l) => n + l.length, 0));
+      let at = 0;
+      for (const l of lists) { p.set(l, at); at += l.length; }
+      arrays.push(vcount, p);
+      const rest = attrs.replace(/\s+count="[^"]*"/, '');
+      return `<polylist${rest} count="${lists.length}">${inputs.join('')}<vcount>${token(arrays.length - 2)}</vcount><p>${token(arrays.length - 1)}</p></polylist>`;
+    })
+    .replace(INSTANCE_NODE, (_m, file: string, id: string) => {
       refs.push({ file, id });
       return `<node id="__ref_${refs.length - 1}"/>`;
     })
@@ -39,32 +87,35 @@ export function preprocess(text: string): { text: string; refs: NodeRef[] } {
       if (!id) { id = `__node_${anonymous++}`; attrs = ` id="${id}"${attrs}`; }
       return `<node${attrs.replace(/\s+name="[^"]*"/, '')} name="${NODE_TAG}${id}"${slash}>`;
     });
-  return { text: stripsToTriangles(out), refs };
+  return { text, reduced, arrays, refs };
+}
+
+function strideOf(inputs: string[]): number {
+  return Math.max(0, ...inputs.map(i => Number(/\boffset="(\d+)"/.exec(i)?.[1] ?? 0))) + 1;
 }
 
 /**
- * Rewrites <tristrips> and <trifans> as <triangles>. A strip v0 v1 v2 v3 … gives
- * (v0 v1 v2), (v2 v1 v3), … so that all triangles keep the winding of the first; a fan
- * gives (v0 v1 v2), (v0 v2 v3), …. Triangles with a repeated vertex (joins between strips)
- * are dropped.
+ * Triangle indices of strips or fans. Each list holds whole vertices of `stride` indices.
+ * A strip v0 v1 v2 v3 … gives (v0 v1 v2), (v2 v1 v3), … so that all triangles keep the
+ * winding of the first; a fan gives (v0 v1 v2), (v0 v2 v3), …. Triangles with a repeated
+ * vertex (joins between strips) are dropped.
  */
-export function stripsToTriangles(text: string): string {
-  return text.replace(/<(tristrips|trifans)\b([^>]*)>([\s\S]*?)<\/\1>/g, (_m, kind: string, attrs: string, body: string) => {
-    const inputs = body.match(/<input\b[^>]*\/>/g) || [];
-    const stride = Math.max(0, ...inputs.map(i => Number(/\boffset="(\d+)"/.exec(i)?.[1] ?? 0))) + 1;
-    const out: string[] = [];
-    for (const [, p] of body.matchAll(/<p>([^<]*)<\/p>/g)) {
-      const idx = p.trim().split(/\s+/);
-      const n = Math.floor(idx.length / stride);
-      const vertex = (i: number) => idx.slice(i * stride, i * stride + stride).join(' ');
-      for (let i = 0; i + 2 < n; i++) {
-        const order = kind === 'trifans' ? [0, i + 1, i + 2] : i % 2 === 0 ? [i, i + 1, i + 2] : [i + 1, i, i + 2];
-        const tri = order.map(vertex);
-        if (tri[0] === tri[1] || tri[1] === tri[2] || tri[0] === tri[2]) continue;
-        out.push(tri.join(' '));
-      }
+export function stripIndices(kind: 'tristrips' | 'trifans', lists: Int32Array[], stride: number): Int32Array {
+  let capacity = 0;
+  for (const l of lists) capacity += Math.max(0, l.length / stride - 2) * 3 * stride;
+  const out = new Int32Array(capacity);
+  let n = 0;
+  const same = (l: Int32Array, a: number, b: number) => {
+    for (let k = 0; k < stride; k++) if (l[a * stride + k] !== l[b * stride + k]) return false;
+    return true;
+  };
+  for (const l of lists) {
+    const count = Math.floor(l.length / stride);
+    for (let i = 0; i + 2 < count; i++) {
+      const [a, b, c] = kind === 'trifans' ? [0, i + 1, i + 2] : i % 2 === 0 ? [i, i + 1, i + 2] : [i + 1, i, i + 2];
+      if (same(l, a, b) || same(l, b, c) || same(l, a, c)) continue;
+      for (const v of [a, b, c]) for (let k = 0; k < stride; k++) out[n++] = l[v * stride + k];
     }
-    const rest = attrs.replace(/\s+count="[^"]*"/, '');
-    return `<triangles${rest} count="${out.length}">${inputs.join('')}<p>${out.join(' ')}</p></triangles>`;
-  });
+  }
+  return out.slice(0, n);
 }

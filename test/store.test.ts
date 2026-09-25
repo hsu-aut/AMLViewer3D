@@ -46,6 +46,13 @@ describe('ColladaStore', () => {
     expect(normals.sort()).toEqual([-1, -1, -1, -1, 1, 1, 1]);
   });
 
+  it('draws every polygon of a <polygons> element', async () => {
+    const doc = await newStore().load(fixtureUrl('polygons.dae'));
+    const triangles = meshes(doc.root).reduce((n, m) => n + m.geometry.attributes.position.count / 3, 0);
+    expect(triangles).toBe(3);
+    expect(bounds(doc.root)).toEqual({ min: [0, 0, 0], max: [3, 1, 0] });
+  });
+
   it('draws both sides of every material', async () => {
     const doc = await newStore().load(fixtureUrl('merge.dae'));
     for (const mesh of meshes(doc.root)) for (const m of [mesh.material].flat()) expect(m.side).toBe(THREE.DoubleSide);

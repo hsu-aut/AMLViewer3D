@@ -1,33 +1,55 @@
-import { preprocess, stripsToTriangles } from '../src/collada/preprocess';
+import { preprocess, stripIndices, ARRAY_TOKEN } from '../src/collada/preprocess';
 import { readFixture } from './helpers';
 
-const triangleIndices = (xml: string) =>
-  [...xml.matchAll(/<triangles\b[^>]*count="(\d+)"[^>]*>[\s\S]*?<p>([^<]*)<\/p>/g)].map(m => ({ count: +m[1], p: m[2].trim().split(/\s+/).map(Number) }));
+const ints = (...v: number[]) => Int32Array.from(v);
+const list = (a: Int32Array) => Array.from(a);
 
-describe('stripsToTriangles', () => {
+describe('stripIndices', () => {
   it('turns a strip of n vertices into n - 2 triangles with alternating order', () => {
-    const out = stripsToTriangles('<tristrips material="m" count="1"><input semantic="VERTEX" offset="0"/><p>0 1 2 3 4</p></tristrips>');
-    expect(triangleIndices(out)).toEqual([{ count: 3, p: [0, 1, 2, 2, 1, 3, 2, 3, 4] }]);
-    expect(out).toContain('material="m"');
+    expect(list(stripIndices('tristrips', [ints(0, 1, 2, 3, 4)], 1))).toEqual([0, 1, 2, 2, 1, 3, 2, 3, 4]);
   });
 
   it('turns a fan into triangles around the first vertex', () => {
-    const out = stripsToTriangles('<trifans count="1"><input semantic="VERTEX" offset="0"/><p>9 1 2 3 4</p></trifans>');
-    expect(triangleIndices(out)).toEqual([{ count: 3, p: [9, 1, 2, 9, 2, 3, 9, 3, 4] }]);
+    expect(list(stripIndices('trifans', [ints(9, 1, 2, 3, 4)], 1))).toEqual([9, 1, 2, 9, 2, 3, 9, 3, 4]);
   });
 
   it('keeps whole vertices when several inputs share an index list', () => {
-    const out = stripsToTriangles('<tristrips count="1"><input semantic="VERTEX" offset="0"/><input semantic="NORMAL" offset="1"/><p>0 7 1 7 2 7 3 7</p></tristrips>');
-    expect(triangleIndices(out)).toEqual([{ count: 2, p: [0, 7, 1, 7, 2, 7, 2, 7, 1, 7, 3, 7] }]);
+    expect(list(stripIndices('tristrips', [ints(0, 7, 1, 7, 2, 7, 3, 7)], 2))).toEqual([0, 7, 1, 7, 2, 7, 2, 7, 1, 7, 3, 7]);
   });
 
-  it('drops triangles with a repeated vertex and joins all <p> into one', () => {
-    const out = stripsToTriangles('<tristrips count="2"><input semantic="VERTEX" offset="0"/><p>0 1 2</p><p>0 1 1 2</p></tristrips>');
-    expect(triangleIndices(out)).toEqual([{ count: 1, p: [0, 1, 2] }]);
+  it('drops triangles with a repeated vertex and joins all lists', () => {
+    expect(list(stripIndices('tristrips', [ints(0, 1, 2), ints(0, 1, 1, 2)], 1))).toEqual([0, 1, 2]);
   });
 });
 
 describe('preprocess', () => {
+  it('moves number lists into typed arrays and leaves tokens', () => {
+    const { text, reduced, arrays } = preprocess(readFixture('merge.dae'));
+    expect(text).not.toMatch(/<float_array[^>]*>[\d.\s-]+</);
+    expect(reduced).toMatch(/<float_array id="cube_pos_a" count="24">§0<\/float_array>/);
+    expect(arrays[0]).toBeInstanceOf(Float32Array);
+    expect(arrays[0]).toHaveLength(24);
+    expect(arrays[1]).toBeInstanceOf(Int32Array);
+    expect(arrays[1]).toHaveLength(36);
+  });
+
+  it('rewrites strips and fans as triangles on the arrays', () => {
+    const { text, arrays } = preprocess(readFixture('strips.dae'));
+    expect(text).not.toMatch(/tristrips|trifans/);
+    const tris = [...text.matchAll(/<triangles\b[^>]*count="(\d+)"[^>]*>[\s\S]*?<p>([^<]*)<\/p>/g)].map(m => [+m[1], arrays[+ARRAY_TOKEN.exec(m[2])![1]].length]);
+    // 4 triangles from the strip, 3 from the fan, two inputs per vertex
+    expect(tris).toEqual([[4, 24], [3, 18]]);
+  });
+
+  it('rewrites polygons with one <p> each as a polylist', () => {
+    const { text, arrays } = preprocess(readFixture('polygons.dae'));
+    expect(text).not.toContain('<polygons');
+    const m = /<polylist\b[^>]*count="(\d+)"[^>]*>[\s\S]*?<vcount>([^<]*)<\/vcount><p>([^<]*)<\/p>/.exec(text)!;
+    expect(+m[1]).toBe(2);
+    expect(list(arrays[+ARRAY_TOKEN.exec(m[2])![1]] as Int32Array)).toEqual([4, 3]);
+    expect(list(arrays[+ARRAY_TOKEN.exec(m[3])![1]] as Int32Array)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+  });
+
   it('replaces every <instance_node> with a placeholder and remembers the target', () => {
     const { text, refs } = preprocess(readFixture('merge.dae'));
     expect(refs).toEqual([{ file: '', id: 'inner' }, { file: '', id: 'inner' }]);
@@ -46,9 +68,10 @@ describe('preprocess', () => {
     expect(preprocess(readFixture('arm_flat.dae')).text).toContain('<node id="sid:tool0" sid="tool0" name="@sid:tool0">');
   });
 
-  it('removes the kinematics scene that three.js cannot handle', () => {
-    const { text } = preprocess(readFixture('arm_flat.dae'));
+  it('removes the kinematics scene for three.js and keeps it in the reduced text', () => {
+    const { text, reduced } = preprocess(readFixture('arm_flat.dae'));
     expect(text).not.toContain('instance_kinematics_scene');
     expect(text).toContain('<instance_visual_scene url="#arm_scene"/>');
+    expect(reduced).toContain('<instance_kinematics_scene url="#arm_kin_scene">');
   });
 });

@@ -4,9 +4,9 @@
 // says how many metres one file unit is.
 
 import * as THREE from 'three';
-import { ColladaParser } from 'three/addons/loaders/collada/ColladaParser.js';
 import { ColladaComposer } from 'three/addons/loaders/collada/ColladaComposer.js';
 import { preprocess, NODE_TAG, PLACEHOLDER } from './preprocess';
+import { ArrayColladaParser } from './parser';
 import { hasKinematics, readKinematics, type Kinematics } from './kinematics';
 
 export interface ColladaDoc {
@@ -56,8 +56,8 @@ export class ColladaStore {
   private async read(url: string, chain: string[]): Promise<ColladaDoc> {
     const text = await this.fetchText(url);
     const t0 = performance.now();
-    const { text: patched, refs } = preprocess(text);
-    const parsed = text.trim() ? new ColladaParser().parse(patched) : null;
+    const { text: patched, reduced, arrays, refs } = preprocess(text);
+    const parsed = text.trim() ? new ArrayColladaParser(arrays).parse(patched) : null;
     if (!parsed) throw new Error('not a readable COLLADA document');
     const { library, asset, collada } = parsed;
     const composer = new ColladaComposer(library, collada, new THREE.TextureLoader().setPath(dirOf(url)), null);
@@ -108,7 +108,7 @@ export class ColladaStore {
       name: baseName(url),
       unit: asset.unit || 1,
       root,
-      kinematics: hasKinematics(text) ? readKinematics(text) : null,
+      kinematics: hasKinematics(reduced) ? readKinematics(reduced) : null,
       node: id => {
         let b = built.get(id);
         if (!b) {

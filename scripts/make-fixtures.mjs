@@ -130,6 +130,26 @@ const geo = (id, mat) => `<instance_geometry url="#${id}">${mat.bind}</instance_
 </COLLADA>`);
 }
 
+// ---- polygons: one <p> per polygon -----------------------------------------------------------
+// A quad (0,0) (1,0) (1,1) (0,1) and a triangle (2,0) (3,0) (2,1). three.js keeps only the
+// last <p>; all three triangles must be there, covering x 0..3.
+{
+  const m = material('red', '0.8 0.2 0.2');
+  const pts = [[0, 0], [1, 0], [1, 1], [0, 1], [2, 0], [3, 0], [2, 1]];
+  write('polygons.dae', `${head(1)}
+  <library_effects>${m.effect}</library_effects>
+  <library_materials>${m.material}</library_materials>
+  <library_geometries><geometry id="poly"><mesh>
+    <source id="poly_pos"><float_array id="poly_pos_a" count="${pts.length * 3}">${pts.map(([x, y]) => `${x} ${y} 0`).join(' ')}</float_array>
+      <technique_common><accessor source="#poly_pos_a" count="${pts.length}" stride="3"><param name="X" type="float"/><param name="Y" type="float"/><param name="Z" type="float"/></accessor></technique_common></source>
+    <vertices id="poly_v"><input semantic="POSITION" source="#poly_pos"/></vertices>
+    <polygons material="m" count="2"><input semantic="VERTEX" source="#poly_v" offset="0"/><p>0 1 2 3</p><p>4 5 6</p></polygons>
+  </mesh></geometry></library_geometries>
+  <library_visual_scenes><visual_scene id="s"><node id="poly_node">${geo('poly', m)}</node></visual_scene></library_visual_scenes>
+  <scene><instance_visual_scene url="#s"/></scene>
+</COLLADA>`);
+}
+
 // ---- arm: two links in the plane z = 0, lengths 1 m, stored at j1 = 90°, j2 = -90° ----------
 // Stored pose: link 1 points along +y, link 2 starts at (0,1,0) and points along +x,
 // tool0 sits at the tip of link 2: (1,1,0).
