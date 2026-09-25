@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { parseAml, type AmlDocument, type AmlElement } from '../aml/reader';
 import { ColladaStore } from '../collada/store';
+import { WorkerPool } from '../collada/pool';
 import { buildCell, elementOf, type Cell, type CellElement, type CellJoint, type Mechanism } from '../scene/cell';
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -231,7 +232,8 @@ canvas.addEventListener('dblclick', ev => {
 // ---- Loading ------------------------------------------------------------------------------
 async function start() {
   const t0 = performance.now();
-  const store = new ColladaStore();
+  const pool = typeof Worker !== 'undefined' ? new WorkerPool() : undefined;
+  const store = new ColladaStore({ offload: pool });
   const progress = setInterval(() => {
     const known = store.docs.size, done = store.stats.files;
     $('loading-text').textContent = `Loading COLLADA files: ${done} of ${known} (${(store.stats.bytes / 1e6).toFixed(0)} MB)`;
@@ -243,6 +245,7 @@ async function start() {
     const aml = parseAml(await response.text());
     $('file').textContent = `${decodeURIComponent(amlUrl.split('/').pop() ?? '')} · CAEX ${aml.schemaVersion}`;
     cell = await buildCell(aml, amlUrl, store);
+    (window as unknown as { cell: Cell }).cell = cell;   // for the console and browser tests
     scene.add(cell.world);
     focus(cell.world, 0.9);
     buildTree(aml);
@@ -250,24 +253,24 @@ async function start() {
     let tris = 0;
     cell.world.traverse(o => {
       const g = (o as THREE.Mesh).isMesh ? (o as THREE.Mesh).geometry : null;
-      if (g) tris += (g.index ? g.index.count : g.attributes.position.count) / 3;
+      if (g) tris += (g.index?.count ?? g.attributes.position?.count ?? 0) / 3;
     });
     const issues = [...store.stats.missing, ...cell.problems];
     $('status').innerHTML = [
       `${aml.byId.size} elements`,
-      `${store.stats.files} COLLADA files, ${(store.stats.bytes / 1e6).toFixed(0)} MB, parsed in ${(store.stats.parseMs / 1000).toFixed(1)} s`,
+      `${store.stats.files} COLLADA files, ${(store.stats.bytes / 1e6).toFixed(0)} MB${pool ? `, ${pool.size} workers` : ''}`,
       `${Math.round(tris).toLocaleString()} triangles`,
       `${cell.mechanisms.length} mechanisms, ${cell.attachments.length} attached parts`,
       `ready in ${((performance.now() - t0) / 1000).toFixed(1)} s`,
       issues.length ? `<span style="color:var(--warn)" title="${esc(issues.slice(0, 30).join('\n'))}">${issues.length} problems</span>` : 'no problems',
     ].join(' · ');
-    (window as unknown as { cell: Cell }).cell = cell;   // for the console and browser tests
     $('loading').style.display = 'none';
   } catch (e) {
     console.error(e);
     $('loading-text').textContent = `Failed: ${(e as Error).message}`;
   } finally {
     clearInterval(progress);
+    pool?.dispose();
   }
 }
 

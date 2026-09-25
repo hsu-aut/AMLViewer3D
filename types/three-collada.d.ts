@@ -31,6 +31,7 @@ declare module 'three/addons/loaders/collada/ColladaComposer.js' {
   export class ColladaComposer {
     constructor(library: ColladaLibrary, collada: Element, textureLoader: TextureLoader, tgaLoader: unknown);
     compose(): { scene: Group };
+    buildGeometry(data: unknown): unknown;
     getNode(id: string): Object3D;
   }
 }

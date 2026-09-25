@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { ColladaComposer } from 'three/addons/loaders/collada/ColladaComposer.js';
 import { parseAml } from '../src/aml/reader';
 import { ColladaStore } from '../src/collada/store';
+import { WorkerPool } from '../src/collada/pool';
 import { buildCell } from '../src/scene/cell';
 import { preprocess } from '../src/collada/preprocess';
 import { ArrayColladaParser } from '../src/collada/parser';
@@ -16,11 +17,37 @@ const t = () => performance.now();
 const s = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
 
 async function run() {
-  const t0 = t();
+  const aml = parseAml(await (await fetch(amlUrl)).text());
+  let t0 = t();
+  const pool = new WorkerPool();
+  // timeline of the worker tasks, relative to t0
+  const tasks: { op: string; start: number; end: number }[] = [];
+  const traced = <A extends unknown[], R>(op: string, f: (...a: A) => Promise<R>) => async (...a: A) => {
+    const start = t() - t0; const r = await f(...a); tasks.push({ op, start, end: t() - t0 }); return r;
+  };
+  const pooled = new ColladaStore({ offload: { load: traced('load', pool.load.bind(pool)), buildGeometries: traced('geometry', pool.buildGeometries.bind(pool)) } });
+  // explicit references first, so that loading and assembling can be timed apart
+  const files = new Set<string>();
+  for (const el of aml.byId.values()) for (const c of el.collada) if (c.refType === 'explicit') files.add(new URL(c.file, amlUrl).href);
+  await Promise.all([...files].map(f => pooled.load(f)));
+  const workersLoad = t() - t0;
+  await buildCell(aml, amlUrl, pooled);
+  const withWorkers = t() - t0;
+  pool.dispose();
+  const phase = (op: string) => {
+    const list = tasks.filter(x => x.op === op);
+    const busy = list.reduce((n, x) => n + x.end - x.start, 0);
+    return { tasks: list.length, first: s(Math.min(...list.map(x => x.start))), lastEnd: s(Math.max(...list.map(x => x.end))), meanWait: s(busy / list.length) };
+  };
+  const timeline = { load: phase('load'), geometry: phase('geometry') };
+  t0 = t();
   const store = new ColladaStore();
-  await buildCell(parseAml(await (await fetch(amlUrl)).text()), amlUrl, store);
+  await buildCell(aml, amlUrl, store);
   const full = t() - t0;
   const urls = [...store.docs.keys()];
+  t0 = t();
+  await Promise.all(urls.map(u => fetch(u).then(r => r.arrayBuffer())));
+  const parallelFetch = t() - t0;
 
   const sum = { fetch: 0, preprocess: 0, dom: 0, parse: 0, compose: 0, bytes: 0 };
   for (const url of urls) {
@@ -32,7 +59,7 @@ async function run() {
   }
   const result = {
     files: urls.length, mb: +(sum.bytes / 1e6).toFixed(0), cores: navigator.hardwareConcurrency,
-    full: s(full), fetch: s(sum.fetch), preprocess: s(sum.preprocess), dom: s(sum.dom),
+    full: s(full), withWorkers: s(withWorkers), workersLoad: s(workersLoad), workersMainParse: s(pooled.stats.parseMs), workers: pool.size, parallelFetch: s(parallelFetch), timeline, fetch: s(sum.fetch), preprocess: s(sum.preprocess), dom: s(sum.dom),
     parseWithoutDom: s(sum.parse - sum.dom), compose: s(sum.compose),
   };
   (window as unknown as { bench: unknown }).bench = result;

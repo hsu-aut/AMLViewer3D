@@ -23,7 +23,8 @@
     "test:watch": "vitest",
     "fixtures": "node scripts/make-fixtures.mjs",
     "fixtures:check": "node scripts/make-fixtures.mjs --check",
-    "test:robotcell": "vitest run --config vitest.robotcell.config.ts"
+    "test:robotcell": "vitest run --config vitest.robotcell.config.ts",
+    "serve": "node scripts/serve.mjs"
   },
   "dependencies": {
     "three": "0.186.1"

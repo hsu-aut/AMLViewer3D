@@ -2,11 +2,14 @@
 // preprocess.ts, and fills the <instance_node> placeholders with copies of the referenced
 // nodes, from the same or another file. Coordinates stay as in the file (Z up); `unit`
 // says how many metres one file unit is.
+//
+// With an Offload (a WorkerPool in the browser), reading, preprocessing and building the
+// geometries run in workers; only the small XML skeleton is parsed in this thread.
 
 import * as THREE from 'three';
-import { ColladaComposer } from 'three/addons/loaders/collada/ColladaComposer.js';
-import { preprocess, NODE_TAG, PLACEHOLDER } from './preprocess';
-import { ArrayColladaParser } from './parser';
+import { NODE_TAG, PLACEHOLDER } from './preprocess';
+import { loadFile, toThree, type Offload } from './offload';
+import { ArrayColladaParser, PrebuiltColladaComposer } from './parser';
 import { hasKinematics, readKinematics, type Kinematics } from './kinematics';
 
 export interface ColladaDoc {
@@ -22,7 +25,10 @@ export interface ColladaDoc {
 export interface StoreStats {
   files: number;
   bytes: number;
+  /** Time spent in this thread parsing the XML skeleton and composing the scene. */
   parseMs: number;
+  /** Time spent reading number lists and rewriting, in workers or here. */
+  preprocessMs: number;
   missing: string[];
 }
 
@@ -34,15 +40,13 @@ export const nodeKey = (fileUrl: string, nodeId: string) => `${baseName(fileUrl)
 
 export class ColladaStore {
   readonly docs = new Map<string, Promise<ColladaDoc>>();
-  readonly stats: StoreStats = { files: 0, bytes: 0, parseMs: 0, missing: [] };
-  private readonly fetchText: (url: string) => Promise<string>;
+  readonly stats: StoreStats = { files: 0, bytes: 0, parseMs: 0, preprocessMs: 0, missing: [] };
+  private readonly fetchText: ((url: string) => Promise<string>) | undefined;
+  private readonly offload: Offload | undefined;
 
-  constructor(options: { fetchText?: (url: string) => Promise<string> } = {}) {
-    this.fetchText = options.fetchText ?? (async url => {
-      const r = await fetch(url);
-      if (!r.ok) throw new Error(`${r.status} ${url}`);
-      return r.text();
-    });
+  constructor(options: { fetchText?: (url: string) => Promise<string>; offload?: Offload } = {}) {
+    this.fetchText = options.fetchText;
+    this.offload = options.offload;
   }
 
   load(url: string, chain: string[] = []): Promise<ColladaDoc> {
@@ -54,17 +58,26 @@ export class ColladaStore {
   }
 
   private async read(url: string, chain: string[]): Promise<ColladaDoc> {
-    const text = await this.fetchText(url);
-    const t0 = performance.now();
-    const { text: patched, reduced, arrays, refs } = preprocess(text);
-    const parsed = text.trim() ? new ArrayColladaParser(arrays).parse(patched) : null;
+    const { text: patched, reduced, arrays, refs, bytes, ms } = this.offload ? await this.offload.load(url) : await loadFile(url, this.fetchText);
+    // Ask for the referenced files now, so that they load while this one is being built.
+    for (const ref of refs) if (ref.file) this.load(new URL(ref.file, url).href, chain).catch(() => {});
+    let t0 = performance.now();
+    const parsed = patched.trim() ? new ArrayColladaParser(arrays).parse(patched) : null;
     if (!parsed) throw new Error('not a readable COLLADA document');
     const { library, asset, collada } = parsed;
-    const composer = new ColladaComposer(library, collada, new THREE.TextureLoader().setPath(dirOf(url)), null);
+    const parseMs = performance.now() - t0;
+    if (this.offload) {
+      const geometries = library.geometries as Record<string, { build?: unknown }>;
+      const built = await this.offload.buildGeometries(geometries);
+      for (const [id, b] of Object.entries(built)) geometries[id].build = toThree(b);
+    }
+    t0 = performance.now();
+    const composer = new PrebuiltColladaComposer(library, collada, new THREE.TextureLoader().setPath(dirOf(url)), null);
     const root = composer.compose().scene;
-    this.stats.parseMs += performance.now() - t0;
+    this.stats.parseMs += parseMs + performance.now() - t0;
+    this.stats.preprocessMs += ms;
     this.stats.files++;
-    this.stats.bytes += text.length;
+    this.stats.bytes += bytes;
 
     // Tag node objects; draw both sides because CAD exports often mix the winding order.
     const tag = (object: THREE.Object3D) => object.traverse(o => {

@@ -1,6 +1,6 @@
 // Checks against the AutomationML e.V. example "Robot cell". The data is not part of the
 // repository (by-nc-sa). Unpack it to data/robotcell (or set ROBOTCELL to its folder) and
-// run npm run test:robotcell (about 90 s).
+// run npm run test:robotcell (a few minutes).
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -8,7 +8,9 @@ import * as THREE from 'three';
 import { parseAml } from '../src/aml/reader';
 import { buildCell, type Cell } from '../src/scene/cell';
 import { frameMatrix } from '../src/scene/frame';
-import { newStore } from './helpers';
+import { ColladaStore } from '../src/collada/store';
+import { inThread } from '../src/collada/offload';
+import { fetchFile, newStore } from './helpers';
 
 const dir = path.resolve(process.env.ROBOTCELL || 'data/robotcell');
 const available = fs.existsSync(path.join(dir, 'AmlDocument.aml'));
@@ -30,7 +32,14 @@ describe.skipIf(!available)('AutomationML e.V. robot cell', () => {
     cell = await buildCell(parseAml(fs.readFileSync(path.join(dir, 'AmlDocument.aml'), 'utf8')), url, store);
   }, 900_000);
 
+  const triangles = (root: THREE.Object3D) => {
+    let n = 0;
+    root.traverse(o => { const g = (o as THREE.Mesh).isMesh ? (o as THREE.Mesh).geometry : null; if (g) n += (g.index?.count ?? g.attributes.position?.count ?? 0) / 3; });
+    return n;
+  };
+
   it('loads every file and resolves every reference', () => {
+    expect(triangles(cell.world)).toBe(7_576_407);
     expect(store.stats.files).toBe(406);
     expect(store.stats.missing).toEqual([]);
     expect(cell.problems).toEqual([]);
@@ -79,4 +88,16 @@ describe.skipIf(!available)('AutomationML e.V. robot cell', () => {
     expect(after.distanceTo(before)).toBeCloseTo(1, 6);
     cell.resetJoints();
   });
+
+  it('gives the same cell when the work is handed to workers', async () => {
+    const offloaded = new ColladaStore({ offload: inThread(fetchFile) });
+    const url = pathToFileURL(path.join(dir, 'AmlDocument.aml')).href;
+    const other = await buildCell(parseAml(fs.readFileSync(path.join(dir, 'AmlDocument.aml'), 'utf8')), url, offloaded);
+    expect(offloaded.stats.missing).toEqual([]);
+    expect(other.problems).toEqual([]);
+    expect(triangles(other.world)).toBe(triangles(cell.world));
+    const box = (c: Cell) => new THREE.Box3().setFromObject(c.world);
+    expect(box(other).min.distanceTo(box(cell).min)).toBeLessThan(1e-9);
+    expect(box(other).max.distanceTo(box(cell).max)).toBeLessThan(1e-9);
+  }, 900_000);
 });

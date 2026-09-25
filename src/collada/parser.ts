@@ -3,6 +3,7 @@
 // one-element list (cheap) and the real array is put in its place.
 
 import { ColladaParser } from 'three/addons/loaders/collada/ColladaParser.js';
+import { ColladaComposer } from 'three/addons/loaders/collada/ColladaComposer.js';
 import { ARRAY_TOKEN, type NumberArray } from './preprocess';
 
 const childrenNamed = (el: Element, name: string) => Array.from(el.children).filter(c => c.localName === name);
@@ -33,5 +34,15 @@ export class ArrayColladaParser extends ColladaParser {
     if (vcount) primitive.vcount = vcount;
     if (primitive.type === 'polygons') primitive.vcount = [primitive.p.length / primitive.stride];
     return primitive;
+  }
+}
+
+/**
+ * three.js' composer, keeping geometries that are already built (in a worker): compose()
+ * builds every geometry of the library again without looking at an existing build.
+ */
+export class PrebuiltColladaComposer extends ColladaComposer {
+  override buildGeometry(data: { build?: unknown }) {
+    return data.build ?? super.buildGeometry(data);
   }
 }
