@@ -143,6 +143,11 @@ that the 15 machine links with a `Frame` sit exactly on it, that mounted parts s
 on their points when the robots move, that a robot rides along its linear axis, and
 that the worker path gives the same 7,576,407 triangles.
 
+## State and plan
+
+Where the work stands, why it is built this way, what the editor does with plugins,
+and what comes next: [docs/plan.md](docs/plan.md).
+
 ## License
 
 MIT
