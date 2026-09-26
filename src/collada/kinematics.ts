@@ -2,7 +2,15 @@
 // <kinematics_model>, the chain from nested <link>/<attachment_full>, and the binding of
 // each joint to a transform element of a visual node through
 // <scene><instance_kinematics_scene><bind_joint_axis>. Parameters are followed along
-// <newparam sid> (with <SIDREF>, <float>, <int>) and <bind symbol><param ref>.
+// <newparam sid> (with <SIDREF>, <float>, <int>) and <bind symbol><param ref>, also
+// through <articulated_system>s.
+//
+// Exporters differ: the CATIA plug-in behind the AutomationML robot cell keeps joints in
+// <library_joints> and names the driven node in the target ("node/sid"); OpenRAVE writes
+// joints into the kinematics model (<joint sid>) and targets a transform that sits in a
+// nested node or in a node pulled in by <instance_node> ("visual1/node_joint0_axis0");
+// collada_urdf (ROS) passes parameters on with a path in <param ref="system/param"> and
+// starts targets with a node's sid instead of its id ("node1/node3/node_joint_2_axis0").
 
 import * as THREE from 'three';
 
@@ -29,8 +37,13 @@ export interface Joint {
   /** The node's transform list; the element with `transformSid` is the joint's. */
   transforms: Transform[];
   transformSid: string;
-  /** Value stored in the file (degrees or file units). The visual scene shows this pose. */
+  /** Value stored in the kinematics scene (degrees or file units). */
   initial: number;
+  /**
+   * Value the bound element holds in the visual scene: the angle of a <rotate> (degrees),
+   * the distance along the joint axis of a <translate>; null for other elements.
+   */
+  drawn: number | null;
 }
 
 export interface Kinematics {
@@ -38,6 +51,15 @@ export interface Kinematics {
   joints: Joint[];
   /** Joint key -> key of the joint it hangs on (also for joints that are not bound). */
   parentOf: Map<string, string | null>;
+  /**
+   * The stored values are to be applied to the drawn pose. The visual scene of every file
+   * seen so far draws the kinematics model at 0, but the stored values mean different
+   * things: in the AutomationML robot cell they are controller angles of the drawn pose
+   * (its AML frames fit the drawn pose), in files of the OpenRAVE writer they are angles
+   * from the model's 0 (the robot as OpenRAVE had it). The two cannot be told apart from
+   * the geometry, so this follows the writer: true for OpenRAVE only.
+   */
+  applyStored: boolean;
   problems: string[];
 }
 
@@ -56,21 +78,24 @@ export function readKinematics(text: string): Kinematics {
 
   // Joint definitions by id. Some exporters write id="axis" instead of sid="axis".
   type JointDef = Pick<Joint, 'name' | 'type' | 'axis' | 'min' | 'max'>;
-  const jointDefs = new Map<string, JointDef>();
-  for (const j of all('joint')) {
-    const id = j.getAttribute('id');
-    if (!id) continue;
+  const jointDef = (j: Element): JointDef | undefined => {
     const motion = Array.from(j.children).find(c => c.localName === 'revolute' || c.localName === 'prismatic');
-    if (!motion) continue;
+    if (!motion) return undefined;
     const limits = child(motion, 'limits');
     const num = (n: string) => { const e = child(limits, n); return e ? parseFloat(e.textContent ?? '') : null; };
-    jointDefs.set(id, {
-      name: j.getAttribute('name') || id,
+    return {
+      name: j.getAttribute('name') || j.getAttribute('id') || j.getAttribute('sid') || '',
       type: motion.localName as Joint['type'],
       axis: numbers(child(motion, 'axis')?.textContent || '0 0 1'),
       min: num('min'),
       max: num('max'),
-    });
+    };
+  };
+  const jointDefs = new Map<string, JointDef>();
+  for (const j of all('joint')) {
+    const id = j.getAttribute('id');
+    const def = id ? jointDef(j) : undefined;
+    if (id && def) jointDefs.set(id, def);
   }
 
   // Joints of each kinematics model by sid (inline <joint sid> or <instance_joint sid url>).
@@ -82,7 +107,7 @@ export function readKinematics(text: string): Kinematics {
       const sid = c.getAttribute('sid');
       if (!sid) continue;
       if (c.localName === 'instance_joint') map.set(sid, jointDefs.get((c.getAttribute('url') || '').replace(/^#/, '')));
-      else if (c.localName === 'joint') map.set(sid, jointDefs.get(c.getAttribute('id') ?? ''));
+      else if (c.localName === 'joint') map.set(sid, jointDefs.get(c.getAttribute('id') ?? '') ?? jointDef(c));
     }
     modelJoints.set(model.getAttribute('id') ?? '', map);
   }
@@ -125,9 +150,15 @@ export function readKinematics(text: string): Kinematics {
     return resolveJoint(parts[parts.length - 1], depth + 1);
   }
 
+  // A parameter by its sid; a reference may carry the path of its scope ("system/param").
+  const holderOf = (name: string) => {
+    const last = name.split('/').pop() ?? name;
+    return params.get(name) || binds.get(name) || params.get(last) || binds.get(last);
+  };
+
   function resolveJoint(name: string, depth = 0): Resolved | null {
     if (depth > 8) return null;
-    const holder = params.get(name) || binds.get(name);
+    const holder = holderOf(name);
     if (!holder) return null;
     const sidref = child(holder, 'SIDREF');
     if (sidref) return jointFromSidref(sidref.textContent ?? '', depth);
@@ -136,7 +167,7 @@ export function readKinematics(text: string): Kinematics {
   }
 
   function resolveValue(name: string, depth = 0): number {
-    const holder = params.get(name) || binds.get(name);
+    const holder = holderOf(name);
     if (!holder || depth > 8) return 0;
     const f = child(holder, 'float') || child(holder, 'int');
     if (f) return parseFloat(f.textContent ?? '');
@@ -144,42 +175,78 @@ export function readKinematics(text: string): Kinematics {
     return ref ? resolveValue(ref, depth + 1) : 0;
   }
 
-  const nodesById = new Map<string, Element>();
-  for (const n of all('node')) { const id = n.getAttribute('id'); if (id) nodesById.set(id, n); }
-  const nodeTransforms = (nodeId: string): Transform[] | null => {
-    const node = nodesById.get(nodeId);
-    return node ? Array.from(node.children)
-      .filter(c => TRANSFORMS.includes(c.localName))
-      .map(c => ({ kind: c.localName as Transform['kind'], sid: c.getAttribute('sid'), values: numbers(c.textContent ?? '') })) : null;
-  };
+  const byId = new Map<string, Element>();
+  for (const el of all('*')) { const id = el.getAttribute('id'); if (id) byId.set(id, el); }
+  const nodeTransforms = (node: Element): Transform[] => Array.from(node.children)
+    .filter(c => TRANSFORMS.includes(c.localName))
+    .map(c => ({ kind: c.localName as Transform['kind'], sid: c.getAttribute('sid'), values: numbers(c.textContent ?? '') }));
+
+  // An element below `scope` with this sid, searched breadth first and through the nodes
+  // that <instance_node> pulls in.
+  function findSid(scope: Element, sid: string): Element | null {
+    const queue = [scope];
+    const seen = new Set<Element>();
+    while (queue.length) {
+      const el = queue.shift()!;
+      if (seen.has(el)) continue;
+      seen.add(el);
+      for (const c of Array.from(el.children)) {
+        if (c.getAttribute('sid') === sid) return c;
+        queue.push(c);
+        if (c.localName === 'instance_node') {
+          const target = byId.get((c.getAttribute('url') || '').replace(/^#/, ''));
+          if (target) { if (target.getAttribute('sid') === sid) return target; queue.push(target); }
+        }
+      }
+    }
+    return null;
+  }
+
+  // "nodeId/sid[/sid...]": the element with that id, then elements by sid below it. The
+  // last one is the joint's transform; the node it belongs to is the one the joint drives.
+  function resolveTarget(target: string): { node: Element; transformSid: string } | null {
+    const [first, ...sids] = target.split('/');
+    let el: Element | null = byId.get(first) ?? sidOwners.get(first) ?? null;
+    for (const sid of sids) el = el ? findSid(el, sid) : null;
+    if (!el || !TRANSFORMS.includes(el.localName)) return null;
+    const node = el.parentElement;
+    return node?.localName === 'node' && node.getAttribute('id') && el.getAttribute('sid') ? { node, transformSid: el.getAttribute('sid')! } : null;
+  }
 
   const joints: Joint[] = [];
   const problems: string[] = [];
   for (const scene of all('instance_kinematics_scene')) {
     for (const bind of children(scene, 'bind_joint_axis')) {
       const target = bind.getAttribute('target') || '';
-      const [nodeId, transformSid] = target.split('/');
       const axisParam = child(child(bind, 'axis') ?? bind, 'param')?.textContent?.trim();
       const valueParam = child(child(bind, 'value') ?? bind, 'param')?.textContent?.trim();
       const joint = axisParam ? resolveJoint(axisParam) : null;
-      const transforms = nodeTransforms(nodeId);
-      if (!joint || !transforms || !transforms.some(t => t.sid === transformSid)) {
+      const at = resolveTarget(target);
+      if (!joint || !at) {
         problems.push(`${target}: ${!joint ? 'joint not resolved' : 'target transform not found'}`);
         continue;
       }
       joints.push({
         ...joint,
         parent: parentOf.get(joint.key) ?? null,
-        nodeId,
-        transforms,
-        transformSid,
+        nodeId: at.node.getAttribute('id')!,
+        transforms: nodeTransforms(at.node),
+        transformSid: at.transformSid,
         initial: valueParam ? resolveValue(valueParam) : 0,
+        drawn: (() => {
+          const tr = nodeTransforms(at.node).find(t => t.sid === at.transformSid)!;
+          if (tr.kind === 'rotate') return tr.values[3];
+          if (tr.kind !== 'translate') return null;
+          const axis = new THREE.Vector3(...(joint.axis as [number, number, number])).normalize();
+          return new THREE.Vector3(tr.values[0], tr.values[1], tr.values[2]).dot(axis);
+        })(),
       });
     }
   }
   const depth = (j: Joint) => { let d = 0; for (let k = j.parent; k; k = parentOf.get(k) ?? null) d++; return d; };
   joints.sort((a, b) => depth(a) - depth(b));
-  return { joints, parentOf, problems };
+  const tool = all('authoring_tool')[0]?.textContent ?? '';
+  return { joints, parentOf, applyStored: /OpenRAVE/i.test(tool), problems };
 }
 
 function elementMatrix(tr: Transform): THREE.Matrix4 {

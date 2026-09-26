@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<COLLADA xmlns="http://www.collada.org/2008/03/COLLADASchema" version="1.5.0">
+  <asset><contributor><authoring_tool>OpenRAVE Collada Writer v0.3.5</authoring_tool></contributor><unit/><up_axis>Z_UP</up_axis></asset>
+  <library_effects><effect id="arm_fx"><profile_COMMON><technique sid="t"><lambert><diffuse><color>0.9 0.4 0.1 1</color></diffuse></lambert></technique></profile_COMMON></effect></library_effects>
+  <library_materials><material id="arm"><instance_effect url="#arm_fx"/></material></library_materials>
+  <library_geometries><geometry id="link"><mesh>
+      <source id="link_pos"><float_array id="link_pos_a" count="24">0 -0.05 -0.05 1 -0.05 -0.05 1 0.05 -0.05 0 0.05 -0.05 0 -0.05 0.05 1 -0.05 0.05 1 0.05 0.05 0 0.05 0.05</float_array>
+        <technique_common><accessor source="#link_pos_a" count="8" stride="3"><param name="X" type="float"/><param name="Y" type="float"/><param name="Z" type="float"/></accessor></technique_common></source>
+      <vertices id="link_v"><input semantic="POSITION" source="#link_pos"/></vertices>
+      <triangles material="m" count="12"><input semantic="VERTEX" source="#link_v" offset="0"/><p>0 2 1 0 3 2 4 5 6 4 6 7 0 1 5 0 5 4 1 2 6 1 6 5 2 3 7 2 7 6 3 0 4 3 4 7</p></triangles>
+    </mesh></geometry><geometry id="base"><mesh>
+      <source id="base_pos"><float_array id="base_pos_a" count="24">-0.2 -0.2 -0.2 0.2 -0.2 -0.2 0.2 0.2 -0.2 -0.2 0.2 -0.2 -0.2 -0.2 0 0.2 -0.2 0 0.2 0.2 0 -0.2 0.2 0</float_array>
+        <technique_common><accessor source="#base_pos_a" count="8" stride="3"><param name="X" type="float"/><param name="Y" type="float"/><param name="Z" type="float"/></accessor></technique_common></source>
+      <vertices id="base_v"><input semantic="POSITION" source="#base_pos"/></vertices>
+      <triangles material="m" count="12"><input semantic="VERTEX" source="#base_v" offset="0"/><p>0 2 1 0 3 2 4 5 6 4 6 7 0 1 5 0 5 4 1 2 6 1 6 5 2 3 7 2 7 6 3 0 4 3 4 7</p></triangles>
+    </mesh></geometry></library_geometries>
+  <library_nodes>
+      <node id="v1.node0" sid="node0" name="base"><instance_geometry url="#base"><bind_material><technique_common><instance_material symbol="m" target="#arm"/></technique_common></bind_material></instance_geometry>
+        <node id="v1.node1" sid="node1" name="link1"><rotate>0 0 1 90</rotate><rotate sid="node_joint0_axis0">0 0 1 0</rotate><instance_geometry url="#link"><bind_material><technique_common><instance_material symbol="m" target="#arm"/></technique_common></bind_material></instance_geometry>
+          <node id="v1.node2" sid="node2" name="link2"><translate>1 0 0</translate><rotate>0 0 1 -90</rotate><rotate sid="node_joint1_axis0">0 0 1 0</rotate><instance_geometry url="#link"><bind_material><technique_common><instance_material symbol="m" target="#arm"/></technique_common></bind_material></instance_geometry><node sid="tool0" name="tool0"><translate>1 0 0</translate></node></node>
+        </node>
+      </node>
+  </library_nodes>
+  <library_visual_scenes><visual_scene id="vscene"><node id="visual1" sid="visual1"><translate>0 0 0</translate><instance_node url="#v1.node0" sid="node0"/></node></visual_scene></library_visual_scenes>
+  <library_kinematics_models>
+    <kinematics_model id="kmodel1"><technique_common>
+      <joint name="j1" sid="joint0"><revolute sid="axis0"><axis>0 0 1</axis><limits><min>-180</min><max>180</max></limits></revolute></joint>
+      <joint name="j2" sid="joint1"><revolute sid="axis0"><axis>0 0 1</axis><limits><min>-135</min><max>135</max></limits></revolute></joint>
+      <link sid="link0" name="base">
+        <attachment_full joint="kmodel1/joint0"><rotate>0 0 1 90</rotate>
+          <link sid="link1" name="link1">
+            <attachment_full joint="kmodel1/joint1"><translate>1 0 0</translate><rotate>0 0 1 -90</rotate><link sid="link2" name="link2"/></attachment_full>
+          </link>
+        </attachment_full>
+      </link>
+    </technique_common></kinematics_model>
+  </library_kinematics_models>
+  <library_articulated_systems>
+    <articulated_system id="body1_kinematics"><kinematics>
+      <instance_kinematics_model url="#kmodel1" sid="kmodel1_inst">
+        <newparam sid="body1_kinematics_kmodel1_inst_joint0.axis0"><SIDREF>body1_kinematics/kmodel1_inst/joint0/axis0</SIDREF></newparam>
+        <newparam sid="body1_kinematics_kmodel1_inst_joint1.axis0"><SIDREF>body1_kinematics/kmodel1_inst/joint1/axis0</SIDREF></newparam>
+      </instance_kinematics_model><technique_common/>
+    </kinematics></articulated_system>
+    <articulated_system id="body1_motion"><motion>
+      <instance_articulated_system url="#body1_kinematics">
+        <newparam sid="body1_motion_body1_kinematics_kmodel1_inst_joint0.axis0"><SIDREF>body1_kinematics/body1_kinematics_kmodel1_inst_joint0.axis0</SIDREF></newparam>
+        <newparam sid="body1_motion_body1_kinematics_kmodel1_inst_joint1.axis0"><SIDREF>body1_kinematics/body1_kinematics_kmodel1_inst_joint1.axis0</SIDREF></newparam>
+      </instance_articulated_system><technique_common/>
+    </motion></articulated_system>
+  </library_articulated_systems>
+  <library_kinematics_scenes>
+    <kinematics_scene id="kscene">
+      <instance_articulated_system sid="body1_motion_inst" url="#body1_motion">
+        <newparam sid="kscene_joint0_axis"><SIDREF>body1_motion/body1_motion_body1_kinematics_kmodel1_inst_joint0.axis0</SIDREF></newparam>
+        <newparam sid="kscene_joint0_value"><float>-90</float></newparam>
+        <newparam sid="kscene_joint1_axis"><SIDREF>body1_motion/body1_motion_body1_kinematics_kmodel1_inst_joint1.axis0</SIDREF></newparam>
+        <newparam sid="kscene_joint1_value"><float>90</float></newparam>
+      </instance_articulated_system>
+    </kinematics_scene>
+  </library_kinematics_scenes>
+  <scene>
+    <instance_visual_scene url="#vscene"/>
+    <instance_kinematics_scene url="#kscene">
+      <bind_kinematics_model node="visual1/node0"><param>kscene_model</param></bind_kinematics_model>
+      <bind_joint_axis target="visual1/node_joint0_axis0"><axis><param>kscene_joint0_axis</param></axis><value><param>kscene_joint0_value</param></value></bind_joint_axis>
+      <bind_joint_axis target="visual1/node_joint1_axis0"><axis><param>kscene_joint1_axis</param></axis><value><param>kscene_joint1_value</param></value></bind_joint_axis>
+    </instance_kinematics_scene>
+  </scene>
+</COLLADA>

@@ -30,6 +30,8 @@ export interface CellElement {
 export interface CellJoint extends Joint {
   object: THREE.Object3D;
   value: number;
+  /** The value the drawn geometry shows; motion is relative to it. */
+  rest: number;
   mechanism: Mechanism;
   initialRel: THREE.Matrix4;
   frame: THREE.Matrix4;
@@ -160,6 +162,8 @@ export async function buildCell(aml: AmlDocument, amlUrl: string, store: Collada
   // the chain or flat siblings (as in the KUKA files of the robot cell).
   world.updateMatrixWorld(true);
   const mechanisms: Mechanism[] = [];
+  /** Mechanisms whose stored values are applied at load (see Kinematics.applyStored). */
+  const posedAtLoad: Mechanism[] = [];
   for (const entry of all) {
     const kin = entry.doc?.kinematics;
     if (!kin || !entry.instance) continue;
@@ -174,11 +178,15 @@ export async function buildCell(aml: AmlDocument, amlUrl: string, store: Collada
       const frame = rel(object.parent).multiply(jointFrame(j));
       let depth = 0;
       for (let o: THREE.Object3D | null = object; o && o !== space; o = o.parent) depth++;
-      mechanism.joints.push({ ...j, object, value: j.initial, mechanism, initialRel: rel(object), frame, frameInv: frame.clone().invert(), depth });
+      mechanism.joints.push({ ...j, object, value: j.initial, rest: j.initial, mechanism, initialRel: rel(object), frame, frameInv: frame.clone().invert(), depth });
     }
     problems.push(...kin.problems.map(p => `${entry.el.name}: ${p}`));
     if (!mechanism.joints.length) continue;
     mechanism.byDepth = [...mechanism.joints].sort((a, b) => a.depth - b.depth);
+    if (kin.applyStored && mechanism.joints.some(j => j.drawn !== null && Math.abs(j.drawn - j.initial) > 1e-9)) {
+      for (const j of mechanism.joints) j.rest = j.drawn ?? j.initial;
+      posedAtLoad.push(mechanism);
+    }
     mechanisms.push(mechanism);
   }
 
@@ -189,7 +197,7 @@ export async function buildCell(aml: AmlDocument, amlUrl: string, store: Collada
       return new THREE.Matrix4();
     };
     for (const j of m.joints) {                                     // parents first
-      motion.set(j.key, motionOf(j.parent).clone().multiply(j.frame).multiply(jointMotion(j, j.value - j.initial)).multiply(j.frameInv));
+      motion.set(j.key, motionOf(j.parent).clone().multiply(j.frame).multiply(jointMotion(j, j.value - j.rest)).multiply(j.frameInv));
     }
     m.space.updateWorldMatrix(true, false);
     for (const j of m.byDepth) {                                    // visual parents first
@@ -250,6 +258,8 @@ export async function buildCell(aml: AmlDocument, amlUrl: string, store: Collada
       }
     }
   }
+
+  if (posedAtLoad.length) update();
 
   return {
     aml, world, elements, mechanisms, attachments, problems, attachmentPoint,

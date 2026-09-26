@@ -237,6 +237,108 @@ function arm(kind) {
 write('arm_flat.dae', arm('flat'));
 write('arm_nested.dae', arm('nested'));
 
+// ---- The same arm as two other writers put it --------------------------------------------
+// Both draw the kinematics model at 0: link 1 along +y, link 2 along +x from (0,1,0),
+// tool0 at (1,1,0).
+//
+// arm_openrave.dae, as the OpenRAVE writer: links in <library_nodes>, pulled into the scene by
+// <instance_node>; joints inside the kinematics model (<joint sid>); parameters passed through
+// a motion and a kinematics <articulated_system>; targets in a node below the one named
+// ("visual1/node_joint0_axis0"). It stores j1 = -90, j2 = 90, angles from the model's 0 that
+// are applied at load: link 1 along +x, link 2 along +x from (1,0,0), tool0 at (2,0,0).
+//
+// arm_urdf.dae, as collada_urdf (ROS): nodes nested in the visual scene; parameters passed
+// with a path in <bind><param ref="system/param">; targets that start with a node's sid and
+// skip levels ("node0/node2/node_j2_axis0"). It stores 0 for both joints.
+function writerArm(kind) {
+  const m = material('arm', '0.9 0.4 0.1');
+  const links = `${box('link', [0, -0.05, -0.05], [1, 0.05, 0.05])}${box('base', [-0.2, -0.2, -0.2], [0.2, 0.2, 0])}`;
+  const tool = `<node sid="tool0" name="tool0"><translate>1 0 0</translate></node>`;
+  const ids = kind === 'openrave'
+    ? { tool: 'OpenRAVE Collada Writer v0.3.5', model: 'kmodel1', j: ['joint0', 'joint1'], node: n => `v1.node${n}`, axis: j => `node_${j}_axis0` }
+    : { tool: 'URDF Collada Writer', model: 'kmodel0', j: ['j1', 'j2'], node: n => `vkmodel0_node${n}`, axis: j => `node_${j}_axis0` };
+  const [a, b] = ids.j;
+  const chain = `
+      <node id="${ids.node(0)}" sid="node0" name="base">${geo('base', m)}
+        <node id="${ids.node(1)}" sid="node1" name="link1"><rotate>0 0 1 90</rotate><rotate sid="${ids.axis(a)}">0 0 1 0</rotate>${geo('link', m)}
+          <node id="${ids.node(2)}" sid="node2" name="link2"><translate>1 0 0</translate><rotate>0 0 1 -90</rotate><rotate sid="${ids.axis(b)}">0 0 1 0</rotate>${geo('link', m)}${tool}</node>
+        </node>
+      </node>`;
+  const scene = kind === 'openrave'
+    ? `<library_nodes>${chain}
+  </library_nodes>
+  <library_visual_scenes><visual_scene id="vscene"><node id="visual1" sid="visual1"><translate>0 0 0</translate><instance_node url="#${ids.node(0)}" sid="node0"/></node></visual_scene></library_visual_scenes>`
+    : `<library_visual_scenes><visual_scene id="vscene"><node id="visual0" sid="visual0">${chain}
+  </node></visual_scene></library_visual_scenes>`;
+  const model = `<library_kinematics_models>
+    <kinematics_model id="${ids.model}"><technique_common>
+      <joint name="j1" sid="${a}"><revolute sid="axis0"><axis>0 0 1</axis><limits><min>-180</min><max>180</max></limits></revolute></joint>
+      <joint name="j2" sid="${b}"><revolute sid="axis0"><axis>0 0 1</axis><limits><min>-135</min><max>135</max></limits></revolute></joint>
+      <link sid="link0" name="base">
+        <attachment_full joint="${ids.model}/${a}"><rotate>0 0 1 90</rotate>
+          <link sid="link1" name="link1">
+            <attachment_full joint="${ids.model}/${b}"><translate>1 0 0</translate><rotate>0 0 1 -90</rotate><link sid="link2" name="link2"/></attachment_full>
+          </link>
+        </attachment_full>
+      </link>
+    </technique_common></kinematics_model>
+  </library_kinematics_models>`;
+  const K = kind === 'openrave' ? 'body1_kinematics' : 'robot0_kinematics';
+  const M = kind === 'openrave' ? 'body1_motion' : 'robot0_motion';
+  const sep = kind === 'openrave' ? '.' : '_';
+  const kParam = j => `${K}_${ids.model}_inst_${j}${sep}axis0`;
+  const mParam = j => `${M}_${kParam(j)}`;
+  const systems = `<library_articulated_systems>
+    <articulated_system id="${K}"><kinematics>
+      <instance_kinematics_model url="#${ids.model}" sid="${ids.model}_inst">
+        ${ids.j.map(j => `<newparam sid="${kParam(j)}"><SIDREF>${K}/${ids.model}_inst/${j}/axis0</SIDREF></newparam>`).join('\n        ')}
+      </instance_kinematics_model><technique_common/>
+    </kinematics></articulated_system>
+    <articulated_system id="${M}"><motion>
+      <instance_articulated_system url="#${K}">
+        ${ids.j.map(j => `<newparam sid="${mParam(j)}"><SIDREF>${K}/${kParam(j)}</SIDREF></newparam>`).join('\n        ')}
+      </instance_articulated_system><technique_common/>
+    </motion></articulated_system>
+  </library_articulated_systems>`;
+  const values = kind === 'openrave' ? [-90, 90] : [0, 0];
+  const kscene = kind === 'openrave'
+    ? ids.j.map((j, i) => `<newparam sid="kscene_${j}_axis"><SIDREF>${M}/${mParam(j)}</SIDREF></newparam>
+        <newparam sid="kscene_${j}_value"><float>${values[i]}</float></newparam>`).join('\n        ')
+    : ids.j.map((j, i) => `<bind symbol="kscene_${j}_axis"><param ref="${M}/${mParam(j)}"/></bind>
+        <bind symbol="kscene_${j}_value"><param ref="${M}/${M}_value_${j}"/></bind>`).join('\n        ');
+  // collada_urdf passes the values through the motion system as well.
+  const urdfValues = kind === 'openrave' ? '' : ids.j.map((j, i) => `<newparam sid="${M}_value_${j}"><float>${values[i]}</float></newparam>`).join('');
+  const targets = kind === 'openrave'
+    ? [`visual1/${ids.axis(a)}`, `visual1/${ids.axis(b)}`]
+    : [`node1/${ids.axis(a)}`, `node0/node2/${ids.axis(b)}`];
+  return `<?xml version="1.0" encoding="utf-8"?>
+<COLLADA xmlns="http://www.collada.org/2008/03/COLLADASchema" version="1.5.0">
+  <asset><contributor><authoring_tool>${ids.tool}</authoring_tool></contributor><unit/><up_axis>Z_UP</up_axis></asset>
+  <library_effects>${m.effect}</library_effects>
+  <library_materials>${m.material}</library_materials>
+  <library_geometries>${links}</library_geometries>
+  ${scene}
+  ${model}
+  ${systems.replace('<technique_common/>\n    </motion>', `<technique_common/>${urdfValues}\n    </motion>`)}
+  <library_kinematics_scenes>
+    <kinematics_scene id="kscene">
+      <instance_articulated_system sid="${M}_inst" url="#${M}">
+        ${kscene}
+      </instance_articulated_system>
+    </kinematics_scene>
+  </library_kinematics_scenes>
+  <scene>
+    <instance_visual_scene url="#vscene"/>
+    <instance_kinematics_scene url="#kscene">
+      <bind_kinematics_model node="${kind === 'openrave' ? 'visual1' : 'visual0'}/node0"><param>kscene_model</param></bind_kinematics_model>
+      ${ids.j.map((j, i) => `<bind_joint_axis target="${targets[i]}"><axis><param>kscene_${j}_axis</param></axis><value><param>kscene_${j}_value</param></value></bind_joint_axis>`).join('\n      ')}
+    </instance_kinematics_scene>
+  </scene>
+</COLLADA>`;
+}
+write('arm_openrave.dae', writerArm('openrave'));
+write('arm_urdf.dae', writerArm('urdf'));
+
 {
   const m = material('grip', '0.3 0.3 0.3');
   write('gripper.dae', `${head(1)}
