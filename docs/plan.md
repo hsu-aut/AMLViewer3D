@@ -6,8 +6,9 @@ AutomationML Editor. This file records where the work stands, why it is built
 the way it is, and what comes next, so that work can continue from here
 without the history.
 
-State on 2026-09-26: stages 1 to 3 are done and reviewed; the plugin has passed
-every check of the probe but has **not been run in the real editor yet**.
+State on 2026-09-26: stages 1 to 3 are done, reviewed and tested in the real editor
+(6.4.3.5, driven by the scripts in `plugin/editor-test`, see "The test in the real
+editor").
 Nothing is pushed; the repository has no remote. "AML 3D Viewer" is a working
 title.
 
@@ -18,7 +19,7 @@ title.
 | 2 | Loading speed: robot cell from 44 s to about 5.5 s | done | `37f40e8`, `eb941a2` |
 | 3 | AutomationML Editor plugin (WebView2), selection both ways | done | `4711d9f` |
 | 3a | Two independent reviews (plugin against the decompiled editor, page in plugin mode); all confirmed findings fixed | done | `7c0e173` (page), `7c9f15d` (plugin) |
-| 3b | Test in the real editor | open, see below | |
+| 3b | Test in the real editor; what it found is fixed | done | `d5d5ab4`, `eaba7b7` |
 | 4 | Same page as a view in AmlWeb (with AmlEngine.js); fixes offered to three.js | open | |
 
 ## Code
@@ -175,9 +176,30 @@ git): `extract_bundle.py <AMLEditor.exe> <folder>` unpacks the single-file bundl
   - The plugin therefore takes the path in this order: `CAEXDocument.FilePath`, then the
     container file from `MainViewModel.AMLContainerEditor.ContainerFilename` (by
     reflection), then the API, but only when its file name matches.
-- **Theme:** `ApplicationTheme` knows only Default and Office2010Blue. The plugin reads the
-  brightness of `MahApps.Brushes.ThemeBackground` and follows `ControlzEx` ThemeManager
-  changes by reflection.
+- **Theme:**
+  - View > Change theme offers Default, Metro Light, Royal Light, Office 2010 Blue,
+    Office 2013, Dark (RoyalDark) and Metro Dark. The editor applies a theme through the
+    Infragistics ThemeManager and `AMLApp.ApplySkin` (the MahApps brushes), then calls
+    `ISupportsThemes.OnThemeChanged(ApplicationTheme)` on every plugin that implements it,
+    also when a plugin is activated. (The review assumed that `ApplicationTheme` knows only
+    Default and Office2010Blue; the contract 4.3.0 has all of the above.)
+  - The plugin reads the brightness of `MahApps.Brushes.ThemeBackground` when it is shown and
+    follows `ControlzEx` ThemeManager changes by reflection. In the real editor this follows
+    a change at once (Metro Dark gave "dark", Office 2013 "light"). `ISupportsThemes` would
+    be the documented way and could replace the reflection.
+- **Plugin menu:** PlugIns > <plugin> is a submenu with Activate and Terminate. Its check box
+  is `IsAutoActive`, "activate when the editor starts", and opens nothing by itself.
+- **PlugIn Manager:**
+  - Only active sources (check box in the source dialog) are listed and searched, and a new
+    source shows its packages only after "Update".
+  - The manager searches a source for "AMLEditor" and needs the tag `AMLEditorPlugin.Net`.
+  - It also installs the nuspec's dependencies (Aml.Engine, Aml.Editor.API,
+    System.IO.Packaging) into the plugin's folder, as for every other plugin. They are not
+    used: the load context resolves through the plugin's `deps.json`, where they are compile
+    only, so the editor's copies are shared.
+- **Trees:** a selection made through UI Automation marks the entry but is not processed
+  by the editor (its attribute panel stays empty, plugins are not told); only a mouse click
+  selects.
 - **Packaging:**
   - The Contract assembly must not be shipped; a second copy makes the editor skip the
     plugin silently. Aml.Engine and Aml.Editor.API come from the editor too.
@@ -234,17 +256,21 @@ plugin/Aml.Editor.Plugin.Viewer3D.Probe/bin/Debug/net8.0-windows7.0/Aml.Editor.P
   - WPF cannot draw over a WebView2, so the placeholder shows only while the view is hidden.
 - **CSS grid of the hosted page** needs fixed cells, else the 3D view shrinks to width 0
   (picking still works, hence the size check in the probe).
+- **The editor's panel is narrow.** On a screen scaled by 200 % the plugin's page is about
+  535 × 585 CSS pixels. A fixed 320 px side panel left 200 px for 3D, and a status line that
+  wrapped made the page scroll. The probe's large window hid both.
+- **A WPF ToolBar in a narrow panel** moves what does not fit into its overflow menu; the
+  plugin's status line sat there unseen. It now sits next to the toolbar.
+- **The editor's skin makes tab headers large.** A TabItem style of the plugin's own would
+  replace the skin's style; the headers carry their own font size instead.
 - **Tests of the worker path** must hand typed arrays over (`structuredClone` with
   `transfer`); copying hides errors.
 
 ## Next
 
-1. **Test in the real editor.**
-   - Install: `plugin/build/Aml.Editor.Plugin.Viewer3D/Debug/Aml.Editor.Plugin.Viewer3D.0.1.0.nupkg`
-     through the PlugIn Manager with that folder as a source; close all editor windows first.
-   - Watch for two things the probe cannot check: an .amlx opened through File > Open (path
-     by reflection) and a theme change while the editor runs.
-   - The log is in `%TEMP%\aml3d-viewer`.
+1. **Open question (visible behaviour):** a selection in the document's own libraries
+   (RoleClassLib and so on) clears the 3D selection, as the editor's attribute panel then
+   shows no element either. Keeping the last element marked instead would be a small change.
 2. **Before publishing:**
    - the final name;
    - a remote (probably under hsu-aut, like AMLMcp and AMLOpcUa);
@@ -258,6 +284,31 @@ plugin/Aml.Editor.Plugin.Viewer3D.Probe/bin/Debug/net8.0-windows7.0/Aml.Editor.P
 5. **Known limits:**
    - If WebView2 fails to start, the plugin cannot recover without reopening the view.
    - The robot cell's limits listed above.
+
+### The test in the real editor (2026-09-26)
+
+Installed through the PlugIn Manager from `plugin/build/Aml.Editor.Plugin.Viewer3D/Debug`
+(source "AML3DViewer"), editor 6.4.3.5, screen scaled by 200 %. Steps and scripts:
+`plugin/editor-test/README.md`.
+
+| Check | Result |
+|---|---|
+| install, activate, page ready | passed |
+| new unsaved document | placeholder "folder not known", as intended |
+| robot cell .aml through File > Open > Open AML File | 406 files, 7,576,407 triangles, no problems, about 6.5 s |
+| robot cell .amlx through File > Open > Open AML Container | found through the container path, unpacked, same result, about 6.2 s |
+| click in 3D selects in the editor's tree | passed |
+| click in the editor's tree marks the part in 3D | passed (a real click; see "Trees" above) |
+| Reload keeps the selection | passed |
+| theme change while running (Metro Dark, back to Office 2013) | passed |
+| File > Close empties the page, placeholder shows | passed |
+| editor error log | no entry from this plugin |
+| layout in the narrow panel, status line, tab headers | failed, fixed in `d5d5ab4` and checked again in the editor |
+| log of a second editor process | could not write the shared file; now writes its own |
+
+Seen on the way, not in this plugin: AMLOpcUa 0.1.1 (installed) raises a
+NullReferenceException in `OpcUaPlugin.Watch` on every document load and unload of the
+robot cell, and the editor shows a message box each time.
 
 ### Other 3D formats (considered, not started)
 
