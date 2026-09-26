@@ -193,11 +193,15 @@ function showDetails(entry: CellElement) {
 }
 
 // ---- Joints -------------------------------------------------------------------------------
+/** Joints that can move: collada_urdf writes URDF's fixed joints as revolute ones from 0 to 0. */
+const movable = (mech: Mechanism) => mech.joints.filter(j => !(j.min !== null && j.max !== null && j.min === j.max));
+
 function jointPanel(mech: Mechanism) {
   const box = document.createElement('div');
-  const main = mech.joints.filter(j => /^(joint|axis|achse)[ _]?\d+$/i.test(j.name));
-  const primary = main.length ? main : mech.joints.slice(0, 12);
-  const rest = mech.joints.filter(j => !primary.includes(j));
+  const joints = movable(mech);
+  const main = joints.filter(j => /(^|_)(joint|axis|achse)[ _]?\d+$/i.test(j.name));
+  const primary = main.length ? main : joints.slice(0, 12);
+  const rest = joints.filter(j => !primary.includes(j));
   box.innerHTML = `<div class="section-title" style="padding-left:0">Joints of ${esc(mech.element.name)}</div>`;
   primary.forEach(j => box.appendChild(slider(j)));
   if (rest.length) {
@@ -213,22 +217,30 @@ function jointPanel(mech: Mechanism) {
   return box;
 }
 
+/**
+ * A slider in degrees or millimetres. Values of slide joints are in the file's units
+ * (millimetres in the robot cell, metres in files from OpenRAVE or URDF), shown in mm.
+ */
 function slider(j: CellJoint) {
-  const unit = j.type === 'revolute' ? '°' : ' mm';
-  const span = j.type === 'revolute' ? 180 : 1000;
-  const min = j.min ?? j.initial - span;
-  const max = j.max ?? j.initial + span;
+  const revolute = j.type === 'revolute';
+  const scale = revolute ? 1 : (j.mechanism.entry.doc?.unit ?? 1) * 1000;
+  const unit = revolute ? '°' : ' mm';
+  const span = revolute ? 180 : 1000;
+  const shown = (x: number) => x * scale;
+  const min = j.min !== null ? shown(j.min) : shown(j.initial) - span;
+  const max = j.max !== null ? shown(j.max) : shown(j.initial) + span;
+  const fmt = (x: number) => `${+x.toFixed(1)}${unit}`;
   const div = document.createElement('div');
   div.className = 'joint';
   div.innerHTML = `<label><span>${esc(j.name)}</span><span class="v"></span></label>
-    <input type="range" min="${Math.min(min, j.value)}" max="${Math.max(max, j.value)}" step="0.1" value="${j.value}">
-    <div class="limits"><span>${min}${unit}</span><span>stored ${j.initial}${unit}</span><span>${max}${unit}</span></div>`;
+    <input type="range" min="${Math.min(min, shown(j.value))}" max="${Math.max(max, shown(j.value))}" step="${max - min < 20 ? 0.01 : 0.1}" value="${shown(j.value)}">
+    <div class="limits"><span>${fmt(min)}</span><span>stored ${fmt(shown(j.initial))}</span><span>${fmt(max)}</span></div>`;
   const v = div.querySelector('.v')!;
   const input = div.querySelector('input')!;
-  v.textContent = `${j.value.toFixed(1)}${unit}`;
+  v.textContent = fmt(shown(j.value));
   input.addEventListener('input', () => {
-    cell!.setJoint(j, +input.value);
-    v.textContent = `${(+input.value).toFixed(1)}${unit}`;
+    cell!.setJoint(j, +input.value / scale);
+    v.textContent = fmt(+input.value);
     helper?.update();
     redraw();
   });
@@ -241,7 +253,7 @@ function buildMechanismList() {
   for (const m of cell!.mechanisms) {
     const row = document.createElement('div');
     row.className = 'row';
-    row.innerHTML = `<span class="name"></span> <span class="badge kin">${m.joints.length}</span>`;
+    row.innerHTML = `<span class="name"></span> <span class="badge kin">${movable(m).length}</span>`;
     row.querySelector('.name')!.textContent = m.element.name;
     row.addEventListener('click', () => select(m.element.id));
     row.addEventListener('dblclick', () => focus(m.entry.group));
