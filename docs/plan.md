@@ -127,15 +127,48 @@ old ticket is ignored by the plugin.
   to the document.
 - **Attachments:** AttachmentInterface pairs linked by an InternalLink. The part on a
   joint-driven node leads; the owner of an attachment frame is its parent element.
-- **KUKA files** keep all links as flat siblings, with the stored pose baked in. The chain is
-  only in the kinematics model, so a joint moves by (value minus stored value), relative to
-  the stored pose.
+- **KUKA files** keep all links as flat siblings. The chain is only in the kinematics model,
+  so a joint moves by (value minus stored value), relative to the drawn pose.
+- **What the stored joint values mean depends on the writer.** Every file seen so far draws
+  the kinematics model at 0 (the robot cell's KUKA robots fit the model at 0 to below a
+  millimetre and do not fit it at their stored values). In the robot cell the stored values
+  are controller angles of that drawn pose: its AML frames sit on the drawn pose, so the
+  values must not be applied. In files of the OpenRAVE writer they are angles from the
+  model's 0, the robot as OpenRAVE had it, and the viewer applies them at load. The geometry
+  cannot tell the two apart; the viewer follows the writer named in the file.
 - **Robot cell data gap:** in 8 of 18 attachment links one side states no point (neither
   `target` nor `Frame`); the three robot pedestals are off by the same 1071.6 mm. The viewer
   keeps the loaded distance, so parts still follow. Worth reporting to the AutomationML e.V.
 - **Robot cell limits of little use:** ±360° limits on doors and clamps are placeholders;
   the hose packages (166 passive joints per robot) hang on the arm only and move rigidly.
   Clamps move one by one, not coupled. The file holds no robot paths.
+
+## COLLADA writers seen, and how they write kinematics
+
+Beside the robot cell, `npm run test:robots` loads 30 robots of
+[rdiankov/collada_robots](https://github.com/rdiankov/collada_robots) (OpenRAVE writer and a
+CATIA plug-in, 2014, no licence stated, so they stay local) and three robots converted from
+URDF with `collada_urdf` (Franka Panda with hand, UR5e, ABB IRB 2400); `npm run
+fetch:robots` gets both into `data/`. The first run found no joint at all in the 25 OpenRAVE
+files and in the three URDF files.
+
+| | CATIA plug-in (robot cell, kuka-kr150, weldinggun) | OpenRAVE writer | collada_urdf (ROS) |
+|---|---|---|---|
+| joints | `<library_joints>`, `<instance_joint>` | `<joint sid>` inside the kinematics model | same as OpenRAVE |
+| parameters | `<newparam>`/`<SIDREF>`, `<bind><param ref>` | three levels of `<articulated_system>` | `<bind><param ref="system/param">`, a path in the reference |
+| target of `bind_joint_axis` | `node/sid`, the node holds the transform | `visual1/node_joint0_axis0`, the transform sits in a nested node pulled in by `<instance_node>` | `node1/node3/node_joint_2_axis0`, starts with a node's sid, skips levels |
+| visual nodes | flat siblings | nested in `<library_nodes>` | nested in the visual scene |
+| stored values | belong to the drawn pose | applied to the drawn pose | 0 |
+| fixed joints | | | written as revolute from 0 to 0 (hidden in the joint panel) |
+
+All three are handled now, and `test/writers.test.ts` checks each on a two-link arm written
+the same way (`arm_openrave.dae`, `arm_urdf.dae`). Checked against independent sources: the
+OpenRAVE robots against forward kinematics of their own kinematics model, the URDF robots
+against the URDF (every link, fingers included, to 1e-16).
+
+Not handled: kuka-kr360 (CATIA plug-in) names a node that does not hold the joint's
+transform (each of its link nodes repeats the transforms of all joints above it) and has a
+joint with two axes (a translate and a rotate); 3 of its 33 axes are not found.
 
 ## Gaps in three.js' COLLADA loader (r186)
 
@@ -212,8 +245,10 @@ git): `extract_bundle.py <AMLEditor.exe> <folder>` unpacks the single-file bundl
 ```bash
 npm install
 npm run dev                 # page at http://127.0.0.1:5179/?aml=<url>, default data/robotcell/AmlDocument.aml
-npm run fixtures:check && npm run typecheck && npm test      # 71 tests
+npm run fixtures:check && npm run typecheck && npm test      # 76 tests
 npm run test:robotcell      # 5 tests on the robot cell, needs data/robotcell (about 90 s)
+npm run fetch:robots        # 30 robots of collada_robots and 3 from URDF into data/ (Docker)
+npm run test:robots         # 58 tests on them (about 45 s)
 npm run build               # dist/web, packed into the plugin
 
 dotnet test plugin/Aml.Editor.Plugin.Viewer3D.Tests          # 32 tests, including the package
@@ -277,13 +312,16 @@ plugin/Aml.Editor.Plugin.Viewer3D.Probe/bin/Debug/net8.0-windows7.0/Aml.Editor.P
    - check the CI file after the first push (untested);
    - `CAEX_ClassModel_V.3.0.xsd` lies untracked in `test/fixtures`; clarify whether it
      belongs there.
-3. **More test files:** the robot cell is the only public AML file with COLLADA we have,
-   from 2017 and from one exporter. Other files could come through the AutomationML e.V.
+3. **More test files:** the robot cell is still the only public AML file with COLLADA;
+   the robots above are COLLADA without AML. Whole cells from other tools (Process Simulate,
+   NX MCD, FASTSUITE) could come through the AutomationML e.V. or a licence at the chair.
 4. **Stage 4:** the page as a view in AmlWeb, reading AML with AmlEngine.js instead of
    `reader.ts`; the six gaps above offered to three.js.
 5. **Known limits:**
    - If WebView2 fails to start, the plugin cannot recover without reopening the view.
    - The robot cell's limits listed above.
+   - Joints with more than one axis, and targets that name a node without the joint's
+     transform (kuka-kr360).
 
 ### The test in the real editor (2026-09-26)
 

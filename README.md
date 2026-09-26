@@ -143,6 +143,14 @@ that the 15 machine links with a `Frame` sit exactly on it, that mounted parts s
 on their points when the robots move, that a robot rides along its linear axis, and
 that the worker path gives the same 7,576,407 triangles.
 
+Robots of other COLLADA writers (not included either): `npm run fetch:robots` fetches the
+30 robots of [rdiankov/collada_robots](https://github.com/rdiankov/collada_robots) (OpenRAVE
+writer, CATIA plug-in) and converts three robots from URDF with `collada_urdf` in a ROS Noetic
+container (Franka Panda, UR5e, ABB IRB 2400; needs Docker). `npm run test:robots` checks that
+all load with all joints, that the OpenRAVE robots move as their own kinematics model says, and
+that the URDF robots move as their URDF says. `data/urdf/robots.aml` shows the three in the
+viewer.
+
 ## State and plan
 
 Where the work stands, why it is built this way, what the editor does with plugins,
