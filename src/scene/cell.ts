@@ -66,7 +66,22 @@ export interface Cell {
   attachmentPoint(el: AmlElement): THREE.Object3D | null;
 }
 
-export async function buildCell(aml: AmlDocument, amlUrl: string, store: ColladaStore, options: { frameOrder?: 'fixed' | 'moving' } = {}): Promise<Cell> {
+/**
+ * The URL of a file an AML document refers to. A path on a drive ("file:///C:/Col/x.dae"
+ * or "C:\Col\x.dae") can be read only when the host serves that drive, as the editor
+ * plugin does for an .aml file: `drive` is then its letter ("C:") and the served root is
+ * the root of the document's URL.
+ */
+export function fileUrl(file: string, amlUrl: string, drive?: string | null): string {
+  const onDrive = /^(?:file:\/\/\/)?([A-Za-z]):[\\/](.*)$/.exec(file);
+  if (!onDrive) return new URL(file, amlUrl).href;
+  if (drive && drive[0].toLowerCase() === onDrive[1].toLowerCase()) return new URL('/' + onDrive[2].replace(/\\/g, '/'), amlUrl).href;
+  throw new Error(drive
+    ? `${file} is on another drive than the document (${drive.toUpperCase()}); move it next to the document`
+    : `${file} is an absolute path; only files relative to the document can be read here`);
+}
+
+export async function buildCell(aml: AmlDocument, amlUrl: string, store: ColladaStore, options: { frameOrder?: 'fixed' | 'moving'; drive?: string | null } = {}): Promise<Cell> {
   const order = options.frameOrder ?? 'fixed';
   const world = new THREE.Group();
   world.name = 'AML cell';
@@ -88,7 +103,7 @@ export async function buildCell(aml: AmlDocument, amlUrl: string, store: Collada
     const explicit = el.collada.find(c => c.refType === 'explicit');
     if (explicit) jobs.push((async () => {
       try {
-        const doc = await store.load(new URL(explicit.file, amlUrl).href);
+        const doc = await store.load(fileUrl(explicit.file, amlUrl, options.drive));
         const source = explicit.fragment ? await doc.node(explicit.fragment) : doc.root;
         if (!source) throw new Error(`node #${explicit.fragment} not found`);
         const instance = new THREE.Group();

@@ -16,6 +16,7 @@ interface Task {
 interface Slot {
   worker: Worker;
   open: number;
+  dead: boolean;
 }
 
 export class WorkerPool implements Offload {
@@ -26,7 +27,7 @@ export class WorkerPool implements Offload {
 
   constructor(size = Math.max(1, Math.min(8, (navigator.hardwareConcurrency || 4) - 1)), private readonly perWorker = 2) {
     this.slots = Array.from({ length: size }, () => {
-      const slot: Slot = { worker: new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' }), open: 0 };
+      const slot: Slot = { worker: new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' }), open: 0, dead: false };
       slot.worker.onmessage = (event: MessageEvent<{ id: number; result?: unknown; error?: string }>) => {
         const task = this.running.get(event.data.id);
         if (!task) return;
@@ -36,15 +37,36 @@ export class WorkerPool implements Offload {
         if (event.data.error !== undefined) task.reject(new Error(event.data.error));
         else task.resolve(event.data.result);
       };
+      // A worker whose script does not load, or that dies, answers nothing more. Its tasks
+      // fail; when no worker is left, so does everything that waits.
+      slot.worker.onerror = event => {
+        event.preventDefault?.();
+        this.fail(slot, new Error(`worker failed${event.message ? `: ${event.message}` : ' (its script could not be loaded)'}`));
+      };
+      slot.worker.onmessageerror = () => this.fail(slot, new Error('worker sent a message that could not be read'));
       return slot;
     });
   }
 
   get size(): number { return this.slots.length; }
 
+  private fail(slot: Slot, error: Error): void {
+    if (slot.dead) return;
+    slot.dead = true;
+    slot.worker.terminate();
+    for (const [id, task] of this.running) if (task.slot === slot) { this.running.delete(id); task.reject(error); }
+    if (this.slots.every(s => s.dead)) for (const task of this.waiting.splice(0)) task.reject(error);
+    else this.dispatch();
+  }
+
   private dispatch(): void {
+    const alive = this.slots.filter(s => !s.dead);
+    if (!alive.length) {
+      for (const task of this.waiting.splice(0)) task.reject(new Error('no worker left'));
+      return;
+    }
     while (this.waiting.length) {
-      const slot = this.slots.reduce((a, b) => (b.open < a.open ? b : a));
+      const slot = alive.reduce((a, b) => (b.open < a.open ? b : a));
       if (slot.open >= this.perWorker) return;
       const task = this.waiting.shift()!;
       const id = this.next++;
@@ -71,7 +93,7 @@ export class WorkerPool implements Offload {
   }
 
   dispose(): void {
-    for (const s of this.slots) s.worker.terminate();
+    for (const s of this.slots) { s.dead = true; s.worker.terminate(); }
     for (const task of [...this.running.values(), ...this.waiting]) task.reject(new Error('worker pool disposed'));
     this.running.clear();
     this.waiting.length = 0;

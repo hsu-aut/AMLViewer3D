@@ -97,7 +97,9 @@ function readCollada(ei: Element): ColladaRef {
     interfaceId: ei.getAttribute('ID'),
     name: ei.getAttribute('Name'),
     uri,
-    file: (hash < 0 ? uri : uri.slice(0, hash)).replace(/^file:\/\/\//, './'),
+    // "file:///Col/x.dae" is how the AutomationML examples write a path relative to the
+    // document; "file:///C:/Col/x.dae" is a path on a drive and stays as it is (see cell.ts).
+    file: (hash < 0 ? uri : uri.slice(0, hash)).replace(/^file:\/\/\/(?![A-Za-z]:)/, './'),
     fragment: hash < 0 ? null : uri.slice(hash + 1),
     refType,
     target: value(attribute(ei, 'target')),

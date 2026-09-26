@@ -34,17 +34,22 @@ export async function loadFile(url: string, fetchText: (url: string) => Promise<
 }
 
 async function defaultFetch(url: string): Promise<string> {
-  const r = await fetch(url);
+  // Not from the HTTP cache: Reload has to show a file changed on disk.
+  const r = await fetch(url, { cache: 'no-store' });
   if (!r.ok) throw new Error(`${r.status} ${url}`);
   return r.text();
 }
 
 /** Buffers to hand over instead of copying. */
-export function transferables(value: unknown, into: Transferable[] = []): Transferable[] {
-  if (ArrayBuffer.isView(value)) { if (!into.includes(value.buffer as ArrayBuffer)) into.push(value.buffer as ArrayBuffer); }
-  else if (Array.isArray(value)) for (const v of value) transferables(v, into);
-  else if (value && typeof value === 'object') for (const v of Object.values(value)) transferables(v, into);
-  return into;
+export function transferables(value: unknown): Transferable[] {
+  const found = new Set<ArrayBuffer>();
+  const visit = (v: unknown): void => {
+    if (ArrayBuffer.isView(v)) found.add(v.buffer as ArrayBuffer);
+    else if (Array.isArray(v)) for (const x of v) visit(x);
+    else if (v && typeof v === 'object') for (const x of Object.values(v)) visit(x);
+  };
+  visit(value);
+  return [...found];
 }
 
 // The composer only needs the geometry part of the library to build geometries.

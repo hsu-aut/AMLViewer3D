@@ -8,7 +8,7 @@ import './style.css';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { parseAml, type AmlDocument, type AmlElement } from '../aml/reader';
-import { ColladaStore } from '../collada/store';
+import { ColladaStore, decodeName } from '../collada/store';
 import { WorkerPool } from '../collada/pool';
 import { buildCell, elementOf, type Cell, type CellElement, type CellJoint, type Mechanism } from '../scene/cell';
 import { isHosted, onHostMessage, post } from './host';
@@ -31,6 +31,14 @@ sun.position.set(10, -15, 25);
 scene.add(sun);
 let grid: THREE.GridHelper | null = null;
 
+// The view is drawn when something changed, not in every frame: inside the editor it may
+// stay open for hours, and a large cell keeps the GPU busy.
+let dirty = true;
+function redraw() { dirty = true; }
+controls.addEventListener('change', redraw);
+THREE.DefaultLoadingManager.onProgress = redraw;               // textures arrive after the scene
+THREE.DefaultLoadingManager.onLoad = redraw;
+
 function setTheme(theme: 'dark' | 'light') {
   document.documentElement.dataset.theme = theme;
   const dark = theme === 'dark';
@@ -39,6 +47,7 @@ function setTheme(theme: 'dark' | 'light') {
   grid = new THREE.GridHelper(40, 40, dark ? 0x4a4f59 : 0xb9bec8, dark ? 0x353a43 : 0xd3d7de);
   grid.rotation.x = Math.PI / 2;
   scene.add(grid);
+  redraw();
 }
 setTheme(matchMedia('(prefers-color-scheme: dark)').matches && !isHosted ? 'dark' : 'light');
 
@@ -47,9 +56,15 @@ function resize() {
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
+  redraw();
 }
 new ResizeObserver(resize).observe(canvas.parentElement!);
-renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+renderer.setAnimationLoop(() => {
+  controls.update();
+  if (!dirty) return;
+  dirty = false;
+  renderer.render(scene, camera);
+});
 
 function focus(object: THREE.Object3D, factor = 1.6) {
   const box = new THREE.Box3().setFromObject(object);
@@ -59,6 +74,7 @@ function focus(object: THREE.Object3D, factor = 1.6) {
   const dir = camera.position.clone().sub(controls.target).normalize();
   controls.target.copy(center);
   camera.position.copy(center).addScaledVector(dir, Math.max(size * factor, 0.5));
+  redraw();
 }
 
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
@@ -68,6 +84,8 @@ let cell: Cell | null = null;
 const rows = new Map<string, { row: HTMLElement; box: HTMLElement; el: AmlElement }>();
 let selected: string | null = null;
 let helper: THREE.BoxHelper | null = null;
+/** Inside the editor: the element the editor has selected, shown again after every load. */
+let hostSelection: string | null = null;
 
 // ---- Tree ---------------------------------------------------------------------------------
 function badgeFor(el: AmlElement) {
@@ -134,8 +152,12 @@ function select(id: string | null, { fromTree = false, fromHost = false } = {}) 
   if (selected) rows.get(selected)?.row.classList.remove('selected');
   selected = id;
   if (helper) { scene.remove(helper); helper.dispose(); helper = null; }
+  redraw();
   const entry = id ? cell?.elements.get(id) : undefined;
-  if (!fromHost && changed) post({ type: 'selected', id: entry ? id : null });
+  if (!fromHost && changed) {
+    post({ type: 'selected', id: entry ? id : null });
+    if (entry) hostSelection = id;
+  }
   if (!entry) { selected = null; $('details').innerHTML = '<div class="sub">Nothing selected.</div>'; return; }
   const r = rows.get(entry.el.id);
   if (r) {
@@ -186,7 +208,7 @@ function jointPanel(mech: Mechanism) {
   }
   const reset = document.createElement('button');
   reset.textContent = 'Back to stored pose';
-  reset.addEventListener('click', () => { cell!.resetJoints(mech); helper?.update(); if (selected) showDetails(cell!.elements.get(selected)!); });
+  reset.addEventListener('click', () => { cell!.resetJoints(mech); helper?.update(); redraw(); if (selected) showDetails(cell!.elements.get(selected)!); });
   box.appendChild(reset);
   return box;
 }
@@ -208,6 +230,7 @@ function slider(j: CellJoint) {
     cell!.setJoint(j, +input.value);
     v.textContent = `${(+input.value).toFixed(1)}${unit}`;
     helper?.update();
+    redraw();
   });
   return div;
 }
@@ -228,6 +251,10 @@ function buildMechanismList() {
 
 // ---- Picking ------------------------------------------------------------------------------
 const raycaster = new THREE.Raycaster();
+// Lines and points are hit within this distance in their file's units (default 1, which is
+// a metre in many files); faces go first anyway.
+raycaster.params.Line.threshold = 0.01;
+raycaster.params.Points.threshold = 0.01;
 let down: [number, number] | null = null;
 canvas.addEventListener('pointerdown', ev => { down = [ev.clientX, ev.clientY]; });
 function pick(ev: MouseEvent) {
@@ -235,12 +262,16 @@ function pick(ev: MouseEvent) {
   const rect = canvas.getBoundingClientRect();
   const ndc = new THREE.Vector2(((ev.clientX - rect.left) / rect.width) * 2 - 1, -((ev.clientY - rect.top) / rect.height) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
-  const hit = raycaster.intersectObject(cell.world, true).find(h => h.object.visible);
+  const hits = raycaster.intersectObject(cell.world, true).filter(h => h.object.visible);
+  const hit = hits.find(h => (h.object as THREE.Mesh).isMesh) ?? hits[0];
   return hit ? elementOf(hit.object) : null;
 }
 canvas.addEventListener('pointerup', ev => {
   if (!down || Math.hypot(ev.clientX - down[0], ev.clientY - down[1]) > 4) return;
-  select(pick(ev));
+  const id = pick(ev);
+  // Inside the editor, the editor's tree holds the selection: a click on empty space
+  // does not clear it there, so it does not clear it here either.
+  if (id || !isHosted) select(id);
 });
 canvas.addEventListener('dblclick', ev => {
   const id = pick(ev);
@@ -250,49 +281,73 @@ canvas.addEventListener('dblclick', ev => {
 
 // ---- Loading ------------------------------------------------------------------------------
 
-/** Frees the GPU and memory of the scene shown so far. Copies share geometries and materials. */
+/**
+ * Frees the GPU and memory of the scene shown so far: geometries and materials of meshes,
+ * lines and points, and the materials' textures. Copies share them.
+ */
 function disposeCell() {
   if (!cell) return;
   select(null, { fromHost: true });
   scene.remove(cell.world);
-  const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
+  const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>(), textures = new Set<THREE.Texture>();
   cell.world.traverse(o => {
     const m = o as THREE.Mesh;
-    if (!m.isMesh) return;
-    geometries.add(m.geometry);
-    for (const mat of [m.material].flat()) materials.add(mat);
+    if (m.geometry) geometries.add(m.geometry);
+    if (m.material) for (const mat of [m.material].flat()) materials.add(mat);
   });
+  for (const mat of materials) for (const value of Object.values(mat)) if ((value as THREE.Texture | null)?.isTexture) textures.add(value);
   geometries.forEach(g => g.dispose());
   materials.forEach(m => m.dispose());
+  textures.forEach(t => t.dispose());
   cell = null;
   (window as unknown as { cell: Cell | null }).cell = null;
   $('tree').innerHTML = '';
   $('mechs').innerHTML = '';
   $('status').textContent = '';
+  redraw();
 }
 
 let opening = 0;
+/** The load in progress: a newer document stops it, so that loads do not pile up. */
+let loading: { pool?: WorkerPool; progress: ReturnType<typeof setInterval> } | null = null;
+
+function stopLoading() {
+  if (!loading) return;
+  clearInterval(loading.progress);
+  loading.pool?.dispose();                                // its files fail at once; nothing is reported for them
+  loading = null;
+}
+
+function showWaiting(text: string) {
+  $('loading').style.display = '';
+  $('loading-text').textContent = text;
+  ($('loading-bar') as HTMLElement).style.width = '0';
+}
 
 /**
  * Shows an AML document. `amlUrl` is where the text came from, or would have come from:
- * COLLADA references are resolved against it.
+ * COLLADA references are resolved against it. `hostTicket` goes back with "loaded";
+ * `drive` is the drive the host serves (see buildCell).
  */
-async function openDocument(amlText: string, amlUrl: string) {
+async function openDocument(amlText: string, amlUrl: string, { hostTicket, drive }: { hostTicket?: number; drive?: string | null } = {}) {
   const ticket = ++opening;
+  stopLoading();
   disposeCell();
-  $('loading').style.display = '';
+  showWaiting('Reading the document…');
   const t0 = performance.now();
   const pool = typeof Worker !== 'undefined' ? new WorkerPool() : undefined;
   const store = new ColladaStore({ offload: pool });
   const progress = setInterval(() => {
-    const known = store.docs.size, done = store.stats.files;
+    const known = store.known, done = store.stats.files;
     $('loading-text').textContent = `Loading COLLADA files: ${done} of ${known} (${(store.stats.bytes / 1e6).toFixed(0)} MB)`;
     ($('loading-bar') as HTMLElement).style.width = known ? `${((100 * done) / known).toFixed(0)}%` : '0';
   }, 150);
+  const mine = { pool, progress };
+  loading = mine;
   try {
     const aml = parseAml(amlText);
-    $('file').textContent = `${decodeURIComponent(amlUrl.split('/').pop() ?? '')} · CAEX ${aml.schemaVersion}`;
-    const built = await buildCell(aml, amlUrl, store);
+    $('file').textContent = `${decodeName(amlUrl.split('/').pop() ?? '')} · CAEX ${aml.schemaVersion}`;
+    const built = await buildCell(aml, amlUrl, store, { drive });
     if (ticket !== opening) return;                       // a newer document was sent meanwhile
     cell = built;
     (window as unknown as { cell: Cell }).cell = cell;   // for the console and browser tests
@@ -305,7 +360,7 @@ async function openDocument(amlText: string, amlUrl: string) {
       const g = (o as THREE.Mesh).isMesh ? (o as THREE.Mesh).geometry : null;
       if (g) tris += (g.index?.count ?? g.attributes.position?.count ?? 0) / 3;
     });
-    const issues = [...store.stats.missing, ...cell.problems];
+    const issues = [...new Set([...store.stats.missing, ...cell.problems])];
     const seconds = (performance.now() - t0) / 1000;
     $('status').innerHTML = [
       `${aml.byId.size} elements`,
@@ -316,22 +371,38 @@ async function openDocument(amlText: string, amlUrl: string) {
       issues.length ? `<span style="color:var(--warn)" title="${esc(issues.slice(0, 30).join('\n'))}">${issues.length} problems</span>` : 'no problems',
     ].join(' · ');
     $('loading').style.display = 'none';
+    redraw();
     post({
       type: 'loaded',
+      ticket: hostTicket,
       summary: {
         elements: aml.byId.size, files: store.stats.files, megabytes: Math.round(store.stats.bytes / 1e6),
         triangles: Math.round(tris), mechanisms: cell.mechanisms.length, attached: cell.attachments.length, seconds: +seconds.toFixed(1),
       },
       problems: issues.slice(0, 200),
     });
+    // What the editor selected before or while loading.
+    if (isHosted && hostSelection) select(hostSelection, { fromHost: true });
   } catch (e) {
+    if (ticket !== opening) return;
     console.error(e);
     $('loading-text').textContent = `Failed: ${(e as Error).message}`;
     post({ type: 'error', message: `Could not show the document: ${(e as Error).message}` });
   } finally {
     clearInterval(progress);
     pool?.dispose();
+    if (loading === mine) loading = null;
   }
+}
+
+/** No document (the editor closed it). */
+function clearDocument() {
+  ++opening;
+  stopLoading();
+  disposeCell();
+  hostSelection = null;
+  $('file').textContent = '';
+  showWaiting('Waiting for a document…');
 }
 
 if (isHosted) {
@@ -340,9 +411,15 @@ if (isHosted) {
   window.addEventListener('error', e => post({ type: 'error', message: String(e.message) }));
   window.addEventListener('unhandledrejection', e => post({ type: 'error', message: String((e.reason as Error)?.message ?? e.reason) }));
   onHostMessage(message => {
-    if (message.type === 'open') openDocument(message.aml, new URL(message.name, message.base).href);
-    else if (message.type === 'select') select(message.id, { fromHost: true });
-    else if (message.type === 'setTheme') setTheme(message.theme);
+    if (message.type === 'open') {
+      hostSelection = null;                                   // the host sends its selection after the document
+      openDocument(message.aml, new URL(message.name, message.base).href, { hostTicket: message.ticket, drive: message.drive });
+    }
+    else if (message.type === 'clear') clearDocument();
+    else if (message.type === 'select') {
+      hostSelection = message.id;
+      if (cell) select(message.id, { fromHost: true });   // else after loading
+    } else if (message.type === 'setTheme') setTheme(message.theme);
   });
   post({ type: 'ready', url: location.href });
 } else {

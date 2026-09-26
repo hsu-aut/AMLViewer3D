@@ -51,14 +51,21 @@ export function preprocess(source: string): Preprocessed {
     arrays.push(tag === 'float_array' ? parseFloatList(body) : parseIntList(body));
     return `<${tag}${attrs}>${token(arrays.length - 1)}</${tag}>`;
   });
-  const lookup = (p: string) => arrays[+(ARRAY_TOKEN.exec(p)?.[1] ?? NaN)] as Int32Array | undefined;
+  // Takes a list out: strips, fans and polygons are rewritten into new lists, and the old
+  // ones would otherwise still be handed from the worker to the page.
+  const take = (p: string) => {
+    const k = +(ARRAY_TOKEN.exec(p)?.[1] ?? NaN);
+    const list = arrays[k] as Int32Array | undefined;
+    if (list) arrays[k] = new Int32Array(0);
+    return list;
+  };
 
   const refs: NodeRef[] = [];
   let anonymous = 0;
   const text = reduced
     .replace(/<(tristrips|trifans)\b([^>]*)>([\s\S]*?)<\/\1>/g, (_m, kind: string, attrs: string, body: string) => {
       const inputs = body.match(/<input\b[^>]*\/>/g) || [];
-      const lists = [...body.matchAll(/<p>([^<]*)<\/p>/g)].map(m => lookup(m[1]) ?? new Int32Array(0));
+      const lists = [...body.matchAll(/<p>([^<]*)<\/p>/g)].map(m => take(m[1]) ?? new Int32Array(0));
       const indices = stripIndices(kind as 'tristrips' | 'trifans', lists, strideOf(inputs));
       arrays.push(indices);
       const rest = attrs.replace(/\s+count="[^"]*"/, '');
@@ -67,7 +74,7 @@ export function preprocess(source: string): Preprocessed {
     .replace(/<polygons\b([^>]*)>([\s\S]*?)<\/polygons>/g, (_m, attrs: string, body: string) => {
       const inputs = body.match(/<input\b[^>]*\/>/g) || [];
       const stride = strideOf(inputs);
-      const lists = [...body.matchAll(/<p>([^<]*)<\/p>/g)].map(m => lookup(m[1]) ?? new Int32Array(0));
+      const lists = [...body.matchAll(/<p>([^<]*)<\/p>/g)].map(m => take(m[1]) ?? new Int32Array(0));
       const vcount = Int32Array.from(lists, l => l.length / stride);
       const p = new Int32Array(lists.reduce((n, l) => n + l.length, 0));
       let at = 0;
