@@ -5,7 +5,7 @@ export default defineConfig({
     globals: true,
     environment: 'happy-dom',
     include: ['test/**/*.test.ts'],
-    exclude: ['test/robotcell.test.ts', 'node_modules/**'],
+    exclude: ['test/robotcell.test.ts', 'test/robots.test.ts', 'test/output/**', 'node_modules/**'],
     testTimeout: 30000,
   },
 });

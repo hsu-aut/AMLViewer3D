@@ -24,6 +24,8 @@
     "fixtures": "node scripts/make-fixtures.mjs",
     "fixtures:check": "node scripts/make-fixtures.mjs --check",
     "test:robotcell": "vitest run --config vitest.robotcell.config.ts",
+    "test:robots": "vitest run --config vitest.robots.config.ts",
+    "fetch:robots": "node scripts/fetch-robots.mjs",
     "serve": "node scripts/serve.mjs"
   },
   "dependencies": {
