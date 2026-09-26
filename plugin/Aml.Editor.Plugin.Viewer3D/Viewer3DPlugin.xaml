@@ -5,18 +5,25 @@
     xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
     xmlns:aml="clr-namespace:Aml.Editor.Plugin.WPFBase;assembly=Aml.Editor.Plugin.Contract">
 
+    <!-- Tab titles carry their own font size: the editor's skin makes tab headers large, and a
+         TabItem style of our own would replace the skin's style instead of refining it. -->
     <TabControl>
-        <TabItem Header="3D">
+        <TabItem>
+            <TabItem.Header><TextBlock Text="3D" FontSize="13"/></TabItem.Header>
             <DockPanel>
-                <!-- Everything lives in this toolbar, nothing on the editor's toolbar:
-                     the editor shows the commands of one plugin at a time there. -->
-                <ToolBar DockPanel.Dock="Top">
-                    <Button Content="Reload" Click="ReloadButton_Click"
-                            ToolTip="Show the document again as the editor holds it now, with changes not yet saved."/>
-                    <Separator/>
-                    <TextBlock x:Name="StatusLabel" VerticalAlignment="Center" Margin="6,0" Opacity="0.75" FontStyle="Italic"
-                               TextTrimming="CharacterEllipsis"/>
-                </ToolBar>
+                <!-- Everything lives here, nothing on the editor's toolbar: the editor shows
+                     the commands of one plugin at a time there. The status sits next to the
+                     toolbar, not in it: in a narrow panel a toolbar moves what does not fit into
+                     its overflow menu, where nobody sees it. -->
+                <DockPanel DockPanel.Dock="Top">
+                    <ToolBar DockPanel.Dock="Left">
+                        <Button Content="Reload" Click="ReloadButton_Click" ToolBar.OverflowMode="Never"
+                                ToolTip="Show the document again as the editor holds it now, with changes not yet saved."/>
+                    </ToolBar>
+                    <TextBlock x:Name="StatusLabel" VerticalAlignment="Center" Margin="8,0" Opacity="0.75" FontStyle="Italic"
+                               TextTrimming="CharacterEllipsis"
+                               ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+                </DockPanel>
                 <!-- No fixed colours: the editor may be dark. The theme's background when
                      the editor has one (MahApps), else none. -->
                 <Grid>
@@ -31,7 +38,8 @@
             </DockPanel>
         </TabItem>
 
-        <TabItem Header="Log">
+        <TabItem>
+            <TabItem.Header><TextBlock Text="Log" FontSize="13"/></TabItem.Header>
             <DockPanel Margin="8">
                 <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,6">
                     <CheckBox x:Name="DebugToggle" Content="Verbose log" Margin="0,0,12,4"

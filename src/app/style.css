@@ -12,7 +12,8 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--text); background: var(--bg); }
-#app { display: grid; grid-template-columns: 320px 1fr 340px; grid-template-rows: 44px 1fr 28px; height: 100%; }
+/* minmax(0, 1fr): a long list in a side panel must not stretch the row or push the view aside. */
+#app { display: grid; grid-template-columns: 320px minmax(0, 1fr) 340px; grid-template-rows: 44px minmax(0, 1fr) 28px; height: 100%; }
 header { grid-column: 1 / 4; display: flex; align-items: center; gap: 16px; padding: 0 14px; background: var(--panel); border-bottom: 1px solid var(--line); }
 header h1 { font-size: 14px; margin: 0; font-weight: 600; }
 header .file { color: var(--muted); }
@@ -25,6 +26,8 @@ aside { background: var(--panel); overflow: hidden; display: flex; flex-directio
 .row { display: flex; align-items: center; gap: 4px; padding: 2px 8px; cursor: pointer; white-space: nowrap; }
 .row:hover { background: var(--hover); }
 .row.selected { background: var(--accent-soft); }
+.row .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.row .badge { flex: none; }
 .twist { width: 14px; text-align: center; color: var(--muted); flex: none; }
 .badge { font-size: 10px; padding: 0 5px; border-radius: 8px; background: var(--chip); color: var(--muted); }
 .badge.geo { background: var(--geo-bg); color: var(--geo-fg); }
@@ -36,7 +39,7 @@ main { position: relative; overflow: hidden; }
 #loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 8px; background: var(--overlay); }
 #loading .bar { width: 280px; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
 #loading .bar div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
-#hint { position: absolute; left: 10px; bottom: 8px; color: var(--muted); font-size: 12px; }
+#hint { position: absolute; left: 10px; right: 10px; bottom: 8px; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #details { padding: 0 12px 16px; }
 #details h2 { font-size: 15px; margin: 4px 0 2px; word-break: break-all; }
 #details .sub { color: var(--muted); margin-bottom: 10px; word-break: break-all; }
@@ -50,7 +53,8 @@ main { position: relative; overflow: hidden; }
 button { font: inherit; padding: 4px 10px; border: 1px solid var(--line); background: var(--panel); border-radius: 6px; cursor: pointer; }
 button:hover { background: var(--hover); }
 details summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
-footer { grid-column: 1 / 4; display: flex; gap: 18px; align-items: center; padding: 0 14px; background: var(--panel); border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+/* One line, cut off when narrow; a second line would push the page beyond the window. */
+footer { grid-column: 1 / 4; padding: 0 14px; line-height: 27px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: var(--panel); border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
 #mechs .row { padding-left: 12px; }
 
 /* Every part has a fixed cell, so hiding one does not shift the others. */
@@ -60,7 +64,11 @@ main { grid-row: 2; grid-column: 2; }
 #right { grid-row: 2; grid-column: 3; }
 footer { grid-row: 3; }
 
-/* Inside the AutomationML Editor plugin: the editor shows the tree and the file name. */
-body.embedded #app { grid-template-columns: 0 1fr 320px; grid-template-rows: 0 1fr 24px; }
+/* Inside the AutomationML Editor plugin: the editor shows the tree and the file name. The
+   editor's panel is often narrow (about 530 px on a screen scaled by 200 %), so the details
+   take about a third of the width instead of a fixed 320 px. */
+body.embedded { overflow: hidden; }
+body.embedded #app { grid-template-columns: 0 minmax(0, 1fr) clamp(190px, 36%, 320px); grid-template-rows: 0 minmax(0, 1fr) 24px; }
+body.embedded footer { line-height: 23px; }
 body.embedded #left, body.embedded header { display: none; }
 input, button, textarea { color: inherit; background: var(--panel); }

@@ -21,7 +21,10 @@ public static class PluginLog
 
     public static string LogDirectory => Path.Combine(Path.GetTempPath(), "aml3d-viewer");
 
-    public static string FilePath => Path.Combine(LogDirectory, "aml3d-viewer.log");
+    private static string? _filePath;
+
+    /// <summary>The file written to: the shared one, or one of this process while another editor holds it.</summary>
+    public static string FilePath => _filePath ?? Path.Combine(LogDirectory, "aml3d-viewer.log");
 
     public static bool DebugEnabled { get; set; }
 
@@ -33,19 +36,34 @@ public static class PluginLog
             try
             {
                 Directory.CreateDirectory(LogDirectory);
-                // One previous file is kept; older history is not worth the disk.
-                if (File.Exists(FilePath) && new FileInfo(FilePath).Length > MaxBytes)
-                    File.Move(FilePath, FilePath + ".old", overwrite: true);
-
-                var stream = new FileStream(FilePath, FileMode.Append, FileAccess.Write, FileShare.Read);
-                _writer = new StreamWriter(stream, new UTF8Encoding(false)) { AutoFlush = true };
-                _writer.WriteLine($"==== plugin start {DateTime.Now:yyyy-MM-dd HH:mm:ss} ====");
+                // The editor holds one document per process, so two editors may run at once;
+                // the second one writes a file of its own instead of none.
+                _writer = Open(Path.Combine(LogDirectory, "aml3d-viewer.log"))
+                          ?? Open(Path.Combine(LogDirectory, $"aml3d-viewer-{Environment.ProcessId}.log"));
+                _writer?.WriteLine($"==== plugin start {DateTime.Now:yyyy-MM-dd HH:mm:ss} ====");
             }
             catch
             {
                 // No file log; the tab still works.
                 _writer = null;
             }
+        }
+    }
+
+    private static StreamWriter? Open(string path)
+    {
+        try
+        {
+            // One previous file is kept; older history is not worth the disk.
+            if (File.Exists(path) && new FileInfo(path).Length > MaxBytes)
+                File.Move(path, path + ".old", overwrite: true);
+            var stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read);
+            _filePath = path;
+            return new StreamWriter(stream, new UTF8Encoding(false)) { AutoFlush = true };
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
         }
     }
 
