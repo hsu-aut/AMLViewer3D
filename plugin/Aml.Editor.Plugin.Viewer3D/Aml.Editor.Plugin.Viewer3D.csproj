@@ -59,16 +59,14 @@
     <None Include="..\..\LICENSE" Pack="true" PackagePath="" />
     <None Include="..\..\THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="" />
 
-    <!-- WebView2 assemblies from the NuGet cache. Link makes
-         CopyToOutputDirectory work for an absolute Include. -->
-    <None Include="$(PkgMicrosoft_Web_WebView2)\lib\net462\Microsoft.Web.WebView2.Core.dll"
+    <!-- WebView2 assemblies from the NuGet cache, the .NET build the plugin is
+         compiled against (lib_manual\netcoreapp3.0, as AMLOpcUa ships them).
+         Link makes CopyToOutputDirectory work for an absolute Include. -->
+    <None Include="$(PkgMicrosoft_Web_WebView2)\lib_manual\netcoreapp3.0\Microsoft.Web.WebView2.Core.dll"
           Link="Microsoft.Web.WebView2.Core.dll" CopyToOutputDirectory="PreserveNewest" Visible="false"
           Pack="true" PackagePath="lib\$(TargetFramework)" />
-    <None Include="$(PkgMicrosoft_Web_WebView2)\lib\net462\Microsoft.Web.WebView2.Wpf.dll"
+    <None Include="$(PkgMicrosoft_Web_WebView2)\lib_manual\netcoreapp3.0\Microsoft.Web.WebView2.Wpf.dll"
           Link="Microsoft.Web.WebView2.Wpf.dll" CopyToOutputDirectory="PreserveNewest" Visible="false"
-          Pack="true" PackagePath="lib\$(TargetFramework)" />
-    <None Include="$(PkgMicrosoft_Web_WebView2)\lib\Microsoft.Web.WebView2.Core.winmd"
-          Link="Microsoft.Web.WebView2.Core.winmd" CopyToOutputDirectory="PreserveNewest" Visible="false"
           Pack="true" PackagePath="lib\$(TargetFramework)" />
     <!-- NuGet.Pack drops items under runtimes/win-x64/native/, so the loader is
          staged under obj/ first and packed from there. -->

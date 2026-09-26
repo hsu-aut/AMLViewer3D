@@ -28,14 +28,18 @@ public class PackageTests
     private static string ProjectVersion() =>
         XDocument.Load(Path.Combine(PluginFolder(), Project + ".csproj")).Descendants("Version").First().Value;
 
-    private static List<string> PackageEntries()
+    private static string Package()
     {
         var build = Path.Combine(PluginFolder(), "..", "build", Project);
-        var package = Directory.GetFiles(build, $"{Project}.{ProjectVersion()}.nupkg", SearchOption.AllDirectories)
+        return Directory.GetFiles(build, $"{Project}.{ProjectVersion()}.nupkg", SearchOption.AllDirectories)
             .OrderByDescending(File.GetLastWriteTimeUtc)
             .FirstOrDefault()
             ?? throw new FileNotFoundException("No package for version " + ProjectVersion() + " under " + build);
-        using var zip = ZipFile.OpenRead(package);
+    }
+
+    private static List<string> PackageEntries()
+    {
+        using var zip = ZipFile.OpenRead(Package());
         return zip.Entries.Select(e => e.FullName).ToList();
     }
 
@@ -58,6 +62,22 @@ public class PackageTests
     [InlineData("viewer-assets/index.html")]
     public void ThePackageShipsEverythingThePluginNeedsAtRuntime(string file) =>
         Assert.Contains(Framework + file, PackageEntries());
+
+    [Fact]
+    public void ThePackageShipsTheDotNetBuildOfWebView2()
+    {
+        // The WebView2 package has a .NET Framework build of the WPF control too; the
+        // plugin is compiled against the .NET one (lib_manual/netcoreapp3.0), which
+        // AMLOpcUa ships in the same editor. (Core.dll is one file for both.)
+        using var zip = ZipFile.OpenRead(Package());
+        using var memory = new MemoryStream();
+        using (var entry = zip.GetEntry(Framework + "Microsoft.Web.WebView2.Wpf.dll")!.Open()) entry.CopyTo(memory);
+        memory.Position = 0;
+        using var pe = new System.Reflection.PortableExecutable.PEReader(memory);
+        var metadata = System.Reflection.Metadata.PEReaderExtensions.GetMetadataReader(pe);
+        var references = metadata.AssemblyReferences.Select(h => metadata.GetString(metadata.GetAssemblyReference(h).Name)).ToList();
+        Assert.DoesNotContain("mscorlib", references);
+    }
 
     [Fact]
     public void ThePackageShipsThePageAndItsWorker()

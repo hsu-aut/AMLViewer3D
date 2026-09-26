@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="Aml.Editor.Plugin.Viewer3D.Probe/Aml.Editor.Plugin.Viewer3D.Probe.csproj" />
   <Project Path="Aml.Editor.Plugin.Viewer3D.Tests/Aml.Editor.Plugin.Viewer3D.Tests.csproj" />
   <Project Path="Aml.Editor.Plugin.Viewer3D/Aml.Editor.Plugin.Viewer3D.csproj" />
 </Solution>

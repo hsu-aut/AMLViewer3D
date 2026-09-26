@@ -13,6 +13,8 @@ public sealed class PageMessage
     [JsonPropertyName("message")] public string? Message { get; set; }
     [JsonPropertyName("summary")] public LoadSummary? Summary { get; set; }
     [JsonPropertyName("problems")] public List<string>? Problems { get; set; }
+    /// <summary>For "loaded": the ticket the document was sent with.</summary>
+    [JsonPropertyName("ticket")] public int? Ticket { get; set; }
 }
 
 /// <summary>What the page reports after showing a document.</summary>
@@ -44,6 +46,7 @@ public static class MessageType
     public const string Open = "open";
     public const string Select = "select";
     public const string SetTheme = "setTheme";
+    public const string Clear = "clear";
 
     internal static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = false };
 }

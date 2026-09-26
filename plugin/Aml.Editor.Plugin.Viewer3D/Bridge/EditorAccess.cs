@@ -5,7 +5,7 @@
 //      file was opened) never hears of it. Looked up on the editor's main view model,
 //      as in the plugin playbook's starter.
 //   2. The file the document came from. The contract hands over a CAEXDocument
-//      without a path; the editor's API (Aml.Editor.API) knows the active file.
+//      without saying where it is on disk.
 //
 // Both are allowed to fail: every failure is logged and the plugin tells the user.
 
@@ -63,32 +63,61 @@ public static class EditorAccess
     }
 
     /// <summary>
-    /// The path of the editor's active file, if it is the given document's: the file
-    /// name in the document (CAEXFile/@FileName) must match, so that a path is never
-    /// taken from another open file.
+    /// The file the document was read from, or null when it is not known. In this order:
+    /// <list type="number">
+    /// <item>CAEXDocument.FilePath, which Aml.Engine sets when it loads or saves a file.</item>
+    /// <item>For a document opened from a container: the container's file, which the
+    /// editor keeps on its main view model (AMLContainerEditor.ContainerFilename). The
+    /// editor's API does not report containers opened through File > Open.</item>
+    /// <item>The editor's API (AMLEditor.AMLApplication.ActiveDocument), only if its file
+    /// name is the one the document declares; the API is not updated on every load,
+    /// so its path may belong to a file opened earlier.</item>
+    /// </list>
     /// </summary>
     public static string? TryGetFilePath(CAEXDocument document)
     {
-        string? path;
         try
         {
-            path = ActiveFilePath();
+            if (Existing(document.FilePath) is { } own) return own;
+            if (ContainerOf(document) is { } container) return container;
+        }
+        catch (Exception ex)
+        {
+            PluginLog.Warn("Reading the document's file from the editor failed: " + ex.Message);
+        }
+
+        string? active;
+        try
+        {
+            active = Existing(ActiveFilePath());
         }
         catch (Exception ex) when (ex is FileNotFoundException or FileLoadException or TypeLoadException or MissingMethodException)
         {
-            PluginLog.Debug("The editor API is not available: " + ex.Message);
+            PluginLog.Warn("The editor API is not available: " + ex.Message);
             return null;
         }
-        if (string.IsNullOrEmpty(path)) return null;
+        if (active == null) return null;
 
         var declared = document.CAEXFile?.FileName;
-        if (string.IsNullOrEmpty(declared)) return path;
-        var actual = Path.GetFileName(path);
-        if (string.Equals(declared, actual, StringComparison.OrdinalIgnoreCase)) return path;
-        // A container's root document keeps its own name inside the container.
-        if (DocumentSource.IsContainer(path)) return path;
-        PluginLog.Warn($"The editor's active file is {actual}, but the document calls itself {declared}; using the active file.");
-        return path;
+        if (string.IsNullOrEmpty(declared) || string.Equals(declared, Path.GetFileName(active), StringComparison.OrdinalIgnoreCase))
+            return active;
+        PluginLog.Warn($"The editor's active file is {Path.GetFileName(active)}, but the document calls itself {declared}; its folder is unknown.");
+        return null;
+    }
+
+    private static string? Existing(string? path) =>
+        !string.IsNullOrEmpty(path) && Path.IsPathRooted(path) && File.Exists(path) ? path : null;
+
+    /// <summary>The container file, when the main view model shows this document from one.</summary>
+    private static string? ContainerOf(CAEXDocument document)
+    {
+        var viewModel = Application.Current?.MainWindow?.DataContext;
+        if (viewModel == null) return null;
+        var type = viewModel.GetType();
+        if (type.GetProperty("CAEXDocument", Members)?.GetValue(viewModel) is CAEXDocument shown && !ReferenceEquals(shown, document)) return null;
+        if (type.GetProperty("IsContainer", Members)?.GetValue(viewModel) is not true) return null;
+        var editor = type.GetProperty("AMLContainerEditor", Members)?.GetValue(viewModel);
+        return Existing(editor?.GetType().GetProperty("ContainerFilename", Members)?.GetValue(editor) as string);
     }
 
     // Separate method so that a missing Aml.Editor.API fails here, inside the try above.

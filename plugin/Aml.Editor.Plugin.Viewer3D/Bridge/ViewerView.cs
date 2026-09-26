@@ -14,13 +14,13 @@ namespace Aml.Editor.Plugin.Viewer3D.Bridge;
 /// a message posted before its listener exists is lost.</item>
 /// <item>A reload or a renderer crash makes the page not ready again.</item>
 /// <item>A document is not buffered here: the host answers every Ready by sending the
-/// document it has now, so a buffer could only bring back an older one. Selection and
-/// theme are buffered.</item>
+/// document it has now. Selection and theme are buffered.</item>
 /// </list>
 ///
-/// Two virtual hosts: the viewer's files, and the folder of the open document. The
-/// page loads the COLLADA files from the second one, in Web Workers; access across the
-/// two origins is allowed for exactly these two folders.
+/// Two virtual hosts: the viewer's files, and the folder tree the open document's files
+/// are in (see DocumentSource). The page loads the COLLADA files from the second one, in
+/// Web Workers; access across the two origins is allowed for these two only. The view
+/// never leaves the viewer: dropped files and links do not navigate it.
 /// </summary>
 public sealed class ViewerView : IDisposable
 {
@@ -29,10 +29,10 @@ public sealed class ViewerView : IDisposable
     public const string AssetsFolder = "viewer-assets";
 
     private readonly WebView2 _view;
-    private bool _navigationStarted;
+    private Task? _init;
     private bool _ready;
     private bool _disposed;
-    private string? _mappedFolder;
+    private string? _mappedRoot;
 
     private string? _pendingSelection;
     private bool _hasPendingSelection;
@@ -42,14 +42,15 @@ public sealed class ViewerView : IDisposable
     private EventHandler<CoreWebView2NavigationStartingEventArgs>? _onNavigationStarting;
     private EventHandler<CoreWebView2NavigationCompletedEventArgs>? _onNavigationCompleted;
     private EventHandler<CoreWebView2ProcessFailedEventArgs>? _onProcessFailed;
+    private EventHandler<CoreWebView2NewWindowRequestedEventArgs>? _onNewWindow;
 
     public ViewerView(WebView2 view) => _view = view;
 
     /// <summary>The page booted (first load, reload, recovery).</summary>
     public event Action? Ready;
 
-    /// <summary>A document is shown, with what the page counted and what it could not resolve.</summary>
-    public event Action<LoadSummary?, IReadOnlyList<string>>? Loaded;
+    /// <summary>A document is shown: the ticket it was sent with, what the page counted, what it could not resolve.</summary>
+    public event Action<int, LoadSummary?, IReadOnlyList<string>>? Loaded;
 
     /// <summary>The user picked an element in the page (null: nothing).</summary>
     public event Action<string?>? Selected;
@@ -59,6 +60,10 @@ public sealed class ViewerView : IDisposable
     public event Action<string, string>? PageLog;
 
     public bool IsReady => _ready;
+
+    /// <summary>WebView2's profile. Next to the editor's executable it may not be writable.</summary>
+    public static string UserDataFolder =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AmlViewer3D", "WebView2");
 
     public static string AssetsPath
     {
@@ -70,11 +75,17 @@ public sealed class ViewerView : IDisposable
         }
     }
 
-    public async Task InitAsync()
+    /// <summary>Starts the view once; later calls (the editor fires Loaded on every re-parenting) wait for the same start.</summary>
+    public Task InitAsync() => _init ??= StartAsync();
+
+    private async Task StartAsync()
     {
-        if (_navigationStarted || _disposed) return;
+        if (_disposed) return;
         try
         {
+            // Must be set before the first EnsureCoreWebView2Async.
+            _view.CreationProperties ??= new CoreWebView2CreationProperties { UserDataFolder = UserDataFolder };
+            _view.AllowExternalDrop = false;
             await _view.EnsureCoreWebView2Async();
         }
         catch (Exception ex)
@@ -96,11 +107,22 @@ public sealed class ViewerView : IDisposable
         core.Settings.IsStatusBarEnabled = false;
         core.SetVirtualHostNameToFolderMapping(ViewerHost, assets, CoreWebView2HostResourceAccessKind.Allow);
 
-        _onMessage = (_, e) => OnMessage(e.WebMessageAsJson);
-        _onNavigationStarting = (_, _) => _ready = false;
+        _onMessage = (_, e) => OnMessage(e.Source, e.WebMessageAsJson);
+        _onNavigationStarting = (_, e) =>
+        {
+            // Only the viewer itself; a dropped file or a link must not replace it.
+            if (!IsViewerUrl(e.Uri))
+            {
+                e.Cancel = true;
+                Info?.Invoke("Blocked navigation to " + e.Uri);
+                return;
+            }
+            _ready = false;
+        };
         _onNavigationCompleted = (_, e) =>
         {
-            if (e.IsSuccess) return;
+            // A navigation cancelled above also ends here; the page it wanted to replace stays.
+            if (e.IsSuccess || e.WebErrorStatus == CoreWebView2WebErrorStatus.OperationCanceled) return;
             _ready = false;
             RaiseError("Navigation failed: " + e.WebErrorStatus);
         };
@@ -114,34 +136,58 @@ public sealed class ViewerView : IDisposable
                 _view.Dispatcher.BeginInvoke(() => core.Reload());
             }
         };
+        _onNewWindow = (_, e) => e.Handled = true;
         core.WebMessageReceived += _onMessage;
         core.NavigationStarting += _onNavigationStarting;
         core.NavigationCompleted += _onNavigationCompleted;
         core.ProcessFailed += _onProcessFailed;
+        core.NewWindowRequested += _onNewWindow;
 
-        _navigationStarted = true;
-        core.Navigate($"https://{ViewerHost}/index.html");
+        core.Navigate(StartUrl);
+    }
+
+    private static string StartUrl => $"https://{ViewerHost}/index.html";
+
+    private static bool IsViewerUrl(string? url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps
+        && string.Equals(uri.Host, ViewerHost, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Loads the page again when it is not ready (after a failed navigation or a crash).</summary>
+    public void ReloadPage()
+    {
+        if (_disposed || _view.CoreWebView2 == null) return;
+        _view.CoreWebView2.Navigate(StartUrl);
     }
 
     /// <summary>
-    /// Shows a document: its AML text and the folder its references are relative to.
+    /// Shows a document: its AML text and where its references are. The ticket comes
+    /// back with "loaded", so that a late answer for an older document can be told apart.
     /// Returns false when the page is not ready; the host sends it again on Ready.
     /// </summary>
-    public bool Open(string aml, string folder, string fileName)
+    public bool Open(string aml, DocumentLocation location, int ticket)
     {
         if (_disposed || !_ready || _view.CoreWebView2 == null) return false;
-        MapDocumentFolder(folder);
-        Post(new { type = MessageType.Open, aml, @base = $"https://{DocumentHost}/", name = Uri.EscapeDataString(fileName) });
+        MapDocumentRoot(location.Root);
+        var folder = string.Join('/', location.Folder.Split('/', StringSplitOptions.RemoveEmptyEntries).Select(Uri.EscapeDataString));
+        var @base = $"https://{DocumentHost}/" + (folder.Length > 0 ? folder + "/" : "");
+        Post(new { type = MessageType.Open, aml, @base, name = Uri.EscapeDataString(location.FileName), ticket, drive = location.Drive });
         return true;
     }
 
-    private void MapDocumentFolder(string folder)
+    /// <summary>Empties the page (no document).</summary>
+    public void Clear()
+    {
+        if (_disposed || !_ready) return;
+        Post(new { type = MessageType.Clear });
+    }
+
+    private void MapDocumentRoot(string root)
     {
         var core = _view.CoreWebView2;
-        if (string.Equals(_mappedFolder, folder, StringComparison.OrdinalIgnoreCase)) return;
-        if (_mappedFolder != null) core.ClearVirtualHostNameToFolderMapping(DocumentHost);
-        core.SetVirtualHostNameToFolderMapping(DocumentHost, folder, CoreWebView2HostResourceAccessKind.Allow);
-        _mappedFolder = folder;
+        if (string.Equals(_mappedRoot, root, StringComparison.OrdinalIgnoreCase)) return;
+        if (_mappedRoot != null) core.ClearVirtualHostNameToFolderMapping(DocumentHost);
+        core.SetVirtualHostNameToFolderMapping(DocumentHost, root, CoreWebView2HostResourceAccessKind.Allow);
+        _mappedRoot = root;
     }
 
     /// <summary>Selects an element in the view; null clears the selection.</summary>
@@ -175,9 +221,14 @@ public sealed class ViewerView : IDisposable
     private void Post(object message) =>
         _view.CoreWebView2?.PostWebMessageAsJson(JsonSerializer.Serialize(message));
 
-    private void OnMessage(string json)
+    private void OnMessage(string source, string json)
     {
         if (_disposed) return;
+        if (!IsViewerUrl(source))
+        {
+            RaiseError("Ignored a message from " + source);
+            return;
+        }
         PageMessage? message;
         try
         {
@@ -190,6 +241,19 @@ public sealed class ViewerView : IDisposable
         }
         if (message == null) return;
 
+        // The handlers run on the editor's UI thread; an exception here would end the editor.
+        try
+        {
+            Dispatch(message);
+        }
+        catch (Exception ex)
+        {
+            RaiseError($"Handling the page's '{message.Type}' failed: {ex.Message}");
+        }
+    }
+
+    private void Dispatch(PageMessage message)
+    {
         switch (message.Type)
         {
             case MessageType.Ready:
@@ -201,7 +265,7 @@ public sealed class ViewerView : IDisposable
                 break;
 
             case MessageType.Loaded:
-                Loaded?.Invoke(message.Summary, message.Problems ?? new List<string>());
+                Loaded?.Invoke(message.Ticket ?? -1, message.Summary, message.Problems ?? new List<string>());
                 break;
 
             case MessageType.Selected:
@@ -242,6 +306,7 @@ public sealed class ViewerView : IDisposable
                 if (_onNavigationStarting != null) core.NavigationStarting -= _onNavigationStarting;
                 if (_onNavigationCompleted != null) core.NavigationCompleted -= _onNavigationCompleted;
                 if (_onProcessFailed != null) core.ProcessFailed -= _onProcessFailed;
+                if (_onNewWindow != null) core.NewWindowRequested -= _onNewWindow;
             }
         }
         catch

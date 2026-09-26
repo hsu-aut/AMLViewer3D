@@ -83,14 +83,25 @@ out for now because stale caches are a class of bug of their own.
 document in a WebView2 with this page:
 
 - The page gets the AML text the editor holds in memory, so **Reload** shows
-  changes not yet saved. The COLLADA files come from the document's folder on
-  disk (a second virtual host); an `.amlx` container is unpacked once into
-  `%LOCALAPPDATA%\AmlViewer3D\amlx`.
+  changes not yet saved. The COLLADA files come from disk through a second
+  virtual host. For an `.aml` file that host serves the file's drive, so that
+  references may leave the document's folder (`../dae/x.dae`) or name a path on
+  the same drive (`file:///C:/…`); a path on another drive is reported. An
+  `.amlx` container is unpacked once, off the editor's UI thread, into
+  `%LOCALAPPDATA%\AmlViewer3D\amlx` and served as a whole; unpacked containers
+  not used for a week are removed.
 - A click on a part selects its element in the editor's tree
   (`ISupportsSelection`); a selection in the tree, also of an interface or
-  attribute, marks the element's part in 3D. Neither direction echoes back.
+  attribute, marks the element's part in 3D, also when it comes while the
+  document is still loading. Selections in the trees of external libraries are
+  ignored, and a click on empty space leaves the selection as it is.
+- A new document or Reload stops the load in progress; closing the document
+  empties the view.
 - The page leaves the tree to the editor and follows the editor's light or dark
-  theme (read from its MahApps background).
+  theme (read from its MahApps background, also when it changes).
+- The page cannot be navigated away: dropped files and links are blocked. WebView2
+  keeps its profile in `%LOCALAPPDATA%\AmlViewer3D\WebView2`; the plugin's log is
+  in `%TEMP%\aml3d-viewer`.
 
 ```bash
 npm run build                                   # the page, packed with the plugin
@@ -106,8 +117,10 @@ relative asset paths, a display name the editor accepts.
 `plugin/Aml.Editor.Plugin.Viewer3D.Probe` hosts the plugin in a window of its own
 the way the editor does and checks it end to end: the page loads the document,
 fills the view, a click in 3D reaches the editor as a selection, a selection from
-the editor marks the part, the dark theme arrives, reload works. With the robot
-cell, as .aml and as .amlx, all checks pass:
+the editor marks the part, one from another document's tree does not, a selection
+made during a reload is shown after it, three quick reloads end in one load, the
+dark theme arrives, a link cannot lead the page away, closing and opening a
+document again works. With the robot cell, as .aml and as .amlx, all checks pass:
 
 ```bash
 dotnet run --project plugin/Aml.Editor.Plugin.Viewer3D.Probe -- data/robotcell/AmlDocument.aml test/output/probe

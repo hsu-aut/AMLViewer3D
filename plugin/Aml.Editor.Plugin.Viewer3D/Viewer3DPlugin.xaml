@@ -14,13 +14,16 @@
                     <Button Content="Reload" Click="ReloadButton_Click"
                             ToolTip="Show the document again as the editor holds it now, with changes not yet saved."/>
                     <Separator/>
-                    <TextBlock x:Name="StatusLabel" VerticalAlignment="Center" Margin="6,0" Foreground="#666" FontStyle="Italic"
+                    <TextBlock x:Name="StatusLabel" VerticalAlignment="Center" Margin="6,0" Opacity="0.75" FontStyle="Italic"
                                TextTrimming="CharacterEllipsis"/>
                 </ToolBar>
+                <!-- No fixed colours: the editor may be dark. The theme's background when
+                     the editor has one (MahApps), else none. -->
                 <Grid>
                     <wv2:WebView2 x:Name="Browser"/>
-                    <Border x:Name="Placeholder" Background="#F8F8F8">
-                        <TextBlock x:Name="PlaceholderText" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#666"
+                    <Border x:Name="Placeholder" Background="{DynamicResource MahApps.Brushes.ThemeBackground}">
+                        <TextBlock x:Name="PlaceholderText" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.75"
+                                   Foreground="{DynamicResource MahApps.Brushes.ThemeForeground}"
                                    TextWrapping="Wrap" MaxWidth="480" TextAlignment="Center"
                                    Text="Open an AML document. Its COLLADA geometry is shown here in 3D."/>
                     </Border>

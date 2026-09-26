@@ -64,6 +64,10 @@ jobs:
       - name: Plugin tests
         run: dotnet test plugin/Aml.Editor.Plugin.Viewer3D.Tests/Aml.Editor.Plugin.Viewer3D.Tests.csproj -c Release
 
+      # The probe needs a desktop with WebView2 to run; here it is only compiled.
+      - name: Probe builds
+        run: dotnet build plugin/Aml.Editor.Plugin.Viewer3D.Probe/Aml.Editor.Plugin.Viewer3D.Probe.csproj -c Release
+
       - uses: actions/upload-artifact@v4
         with:
           name: aml-viewer-3d-plugin

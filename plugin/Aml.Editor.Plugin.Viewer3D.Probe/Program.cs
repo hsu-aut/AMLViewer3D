@@ -49,19 +49,26 @@ internal static class Program
             finally
             {
                 File.WriteAllLines(Path.Combine(output, "report.txt"), Report);
-                foreach (var line in Report) Console.WriteLine(line);
                 app.Shutdown(_failures == 0 ? 0 : 1);
             }
         });
         return app.Run();
     }
 
-    private static void Pass(string text) => Report.Add("ok    " + text);
+    private static void Pass(string text) => Line("ok    " + text);
 
     private static void Fail(string text)
     {
-        Report.Add("FAIL  " + text);
+        Line("FAIL  " + text);
         _failures++;
+    }
+
+    /// <summary>Written at once, so that a probe that hangs shows how far it got.</summary>
+    private static void Line(string text)
+    {
+        Report.Add(text);
+        Console.WriteLine(text);
+        Console.Out.Flush();
     }
 
     private static void Check(bool ok, string text)
@@ -88,12 +95,12 @@ internal static class Program
         Check(shown, $"the document is shown ({(DateTime.Now - t0).TotalSeconds:0.0} s)");
         if (!shown)
         {
-            Report.Add("      page says: " + await Eval(plugin, "document.getElementById('loading-text')?.textContent"));
+            Line("      page says: " + await Eval(plugin, "document.getElementById('loading-text')?.textContent"));
             return;
         }
         await Task.Delay(1500);
         var status = Unquote(await Eval(plugin, "document.getElementById('status').textContent"));
-        Report.Add("      page status: " + status);
+        Line("      page status: " + status);
         Check(status.Contains("no problems"), "the page reports no problems");
         Check(Unquote(await Eval(plugin, "document.body.classList.contains('embedded') ? 'yes' : 'no'")) == "yes", "the page hides its own tree inside the editor");
         // The 3D view must fill most of the page. A layout that squeezes it to nothing
@@ -103,31 +110,41 @@ internal static class Program
         Check(dims[0] > dims[2] / 2 && dims[1] > dims[3] / 2, $"the 3D view fills the page ({dims[0]} x {dims[1]} of {dims[2]} x {dims[3]})");
         await Capture(plugin, Path.Combine(output, "1-shown.png"));
 
-        // 3. A click in 3D selects the element in the editor.
+        // 3. A click in 3D selects the element in the editor. (The editor applies it without
+        //    reporting it back, so there is no echo to test.)
         SelectionEventArgs? fromPage = null;
         plugin.Selected += (_, e) => fromPage = e;
-        await Eval(plugin, """
+        // Clicks from the middle of the view outwards until one hits a part (a click on
+        // empty space changes nothing inside the editor).
+        var at = Unquote(await Eval(plugin, """
             (() => {
               const c = document.getElementById('view'), r = c.getBoundingClientRect();
-              const at = { clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, bubbles: true, pointerId: 1 };
-              c.dispatchEvent(new PointerEvent('pointerdown', at));
-              c.dispatchEvent(new PointerEvent('pointerup', at));
-              return 1;
+              const points = [];
+              for (let j = 1; j < 24; j++) for (let i = 1; i < 40; i++) points.push([i / 40, j / 24]);
+              points.sort((a, b) => Math.hypot(a[0] - 0.5, a[1] - 0.5) - Math.hypot(b[0] - 0.5, b[1] - 0.5));
+              for (const [x, y] of points) {
+                const at = { clientX: r.left + r.width * x, clientY: r.top + r.height * y, bubbles: true, pointerId: 1 };
+                c.dispatchEvent(new PointerEvent('pointerdown', at));
+                c.dispatchEvent(new PointerEvent('pointerup', at));
+                if (document.querySelector('#details h2')) return `${x.toFixed(2)}, ${y.toFixed(2)}`;
+              }
+              return 'nowhere';
             })()
-            """);
+            """));
         var picked = await Until(() => fromPage != null, TimeSpan.FromSeconds(10));
+        Line("      clicked at " + at);
         var pickedElement = fromPage?.SelectedElement as InternalElementType;
         Check(picked && pickedElement != null, $"a click in 3D selects an element in the editor ({pickedElement?.Name ?? "none"})");
         Check(fromPage is ExtendedSelectionEventArgs { Select: true, Expand: true }, "the editor is asked to select and expand it");
-        var shownName = Unquote(await Eval(plugin, "document.querySelector('#details h2')?.textContent ?? ''"));
+        var shownName = await Shown(plugin);
         Check(pickedElement != null && shownName == pickedElement.Name, $"the page shows the same element ({shownName})");
-
-        // The editor answers with ChangeSelectedObject for that element; it must not come back as a new selection.
-        var before = fromPage;
-        if (pickedElement != null) plugin.ChangeSelectedObject(pickedElement);
-        await Task.Delay(500);
-        Check(ReferenceEquals(before, fromPage), "the editor's echo of that selection is not sent back");
         await Capture(plugin, Path.Combine(output, "2-picked.png"));
+
+        // A click on empty space leaves the selection alone, here and in the editor.
+        var before = fromPage;
+        await Click(plugin, 0.01, 0.01);
+        await Task.Delay(500);
+        Check(ReferenceEquals(before, fromPage) && await Shown(plugin) == shownName, "a click on empty space keeps the selection");
 
         // 4. A selection in the editor's tree marks the part in 3D, also through an interface.
         var target = document.CAEXFile.InstanceHierarchy.SelectMany(ih => ih.Descendants<InternalElementType>())
@@ -135,14 +152,22 @@ internal static class Program
         if (target != null)
         {
             plugin.ChangeSelectedObject(target.ExternalInterface.First());
-            var marked = await Until(async () => Unquote(await Eval(plugin, "document.querySelector('#details h2')?.textContent ?? ''")) == target.Name, TimeSpan.FromSeconds(10));
+            var marked = await Until(async () => await Shown(plugin) == target.Name, TimeSpan.FromSeconds(10));
             Check(marked, $"selecting '{target.Name}' (through one of its interfaces) in the editor marks it in 3D");
             Check(fromPage == before, "a selection from the editor is not sent back to it");
             await Capture(plugin, Path.Combine(output, "3-selected-in-editor.png"));
+
+            // The trees of external libraries report selections too, with objects of other documents.
+            var library = CAEXDocument.New_CAEXDocument();
+            var foreign = library.CAEXFile.InstanceHierarchy.Append("Library").InternalElement.Append("Somewhere else");
+            plugin.ChangeSelectedObject(foreign);
+            await Task.Delay(500);
+            Check(await Shown(plugin) == target.Name && fromPage == before, "a selection in another document's tree is ignored");
         }
 
         // 5. The editor's dark theme (MahApps) reaches the page when the view is shown again.
         plugin.Resources["MahApps.Brushes.ThemeBackground"] = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x25, 0x25, 0x25));
+        plugin.Resources["MahApps.Brushes.ThemeForeground"] = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.White);
         plugin.Visibility = Visibility.Collapsed;
         plugin.Visibility = Visibility.Visible;
         var dark = await Until(async () => Unquote(await Eval(plugin, "document.documentElement.dataset.theme ?? ''")) == "dark", TimeSpan.FromSeconds(10));
@@ -150,10 +175,74 @@ internal static class Program
         await Task.Delay(500);
         await Capture(plugin, Path.Combine(output, "4-dark.png"));
 
-        // 6. Reload keeps working and shows the document again.
+        // 6. Reload shows the document again; what the editor selects meanwhile is shown after loading.
+        var loads = 0;
+        plugin.Viewer!.Loaded += (_, _, _) => loads++;
+        var during = document.CAEXFile.InstanceHierarchy.SelectMany(ih => ih.Descendants<InternalElementType>())
+            .FirstOrDefault(ie => ie.Name != target?.Name && ie.ExternalInterface.Any(i => (i.RefBaseClassPath ?? "").EndsWith("COLLADAInterface")));
+        t0 = DateTime.Now;
         plugin.Attach(document);
-        Check(await Until(async () => await Eval(plugin, "window.cell ? 1 : 0") == "1", TimeSpan.FromMinutes(5)), "the document can be shown again");
+        await Task.Delay(200);
+        if (during != null) plugin.ChangeSelectedObject(during);
+        var again = await Until(() => loads == 1, TimeSpan.FromMinutes(5));
+        var single = DateTime.Now - t0;
+        Check(again, $"the document can be shown again ({single.TotalSeconds:0.0} s)");
+        if (during != null)
+            Check(await Until(async () => await Shown(plugin) == during.Name, TimeSpan.FromSeconds(5)), $"'{during.Name}', selected in the editor while loading, is marked after loading");
+
+        // 7. Reload pressed three times in a row: the page finishes one load, not three.
+        loads = 0;
+        t0 = DateTime.Now;
+        for (var i = 0; i < 3; i++)
+        {
+            plugin.Attach(document);
+            await Task.Delay(700);
+        }
+        var burst = await Until(() => loads >= 1, TimeSpan.FromMinutes(5));
+        var took = DateTime.Now - t0;
+        await Task.Delay(3000);
+        if (single > TimeSpan.FromSeconds(2))
+        {
+            Check(burst && loads == 1, $"three quick reloads end in one load ({loads} reported, {took.TotalSeconds:0.0} s; one load took {single.TotalSeconds:0.0} s)");
+            Check(took < single * 2 + TimeSpan.FromSeconds(3), "and take about as long as one");
+        }
+        else Line($"      three quick reloads not checked: one load takes only {single.TotalSeconds:0.0} s ({loads} reported)");
+
+        // 8. The page cannot be navigated away from the viewer.
+        await Eval(plugin, "location.href = 'https://example.com/'; 1");
+        await Task.Delay(1500);
+        Check(Unquote(await Eval(plugin, "location.host")) == Aml.Editor.Plugin.Viewer3D.Bridge.ViewerView.ViewerHost && plugin.Viewer.IsReady,
+            "a link out of the page is blocked and the viewer stays");
+
+        // 9. The editor closes the document: the page empties and the placeholder shows.
+        plugin.DocumentUnLoaded();
+        var cleared = await Until(async () => await Eval(plugin, "window.cell ? 1 : 0") == "0", TimeSpan.FromSeconds(10));
+        Check(cleared && plugin.Placeholder.Visibility == Visibility.Visible && plugin.Browser.Visibility != Visibility.Visible,
+            "closing the document empties the page and shows the placeholder");
+        // CapturePreview does not return while the view is hidden; the placeholder is WPF anyway.
+        CaptureWpf(plugin, Path.Combine(output, "5-closed.png"));
+        plugin.DocumentLoaded(document);
+        var reopened = await Until(async () => await Eval(plugin, "window.cell ? 1 : 0") == "1", TimeSpan.FromMinutes(2));
+        Check(reopened && plugin.Browser.Visibility == Visibility.Visible, "a document opened after that is shown");
+        if (!reopened)
+            Line($"      ready: {plugin.Viewer.IsReady}, page: {await Eval(plugin, "location.href + ' | ' + document.getElementById('loading-text')?.textContent")}, status: {plugin.StatusLabel.Text}");
     }
+
+    /// <summary>A click at a point of the 3D view, given as a fraction of its width and height.</summary>
+    private static Task<string> Click(Viewer3DPlugin plugin, double x, double y) =>
+        Eval(plugin, $$"""
+            (() => {
+              const c = document.getElementById('view'), r = c.getBoundingClientRect();
+              const at = { clientX: r.left + r.width * {{x.ToString(System.Globalization.CultureInfo.InvariantCulture)}}, clientY: r.top + r.height * {{y.ToString(System.Globalization.CultureInfo.InvariantCulture)}}, bubbles: true, pointerId: 1 };
+              c.dispatchEvent(new PointerEvent('pointerdown', at));
+              c.dispatchEvent(new PointerEvent('pointerup', at));
+              return 1;
+            })()
+            """);
+
+    /// <summary>The name of the element the page shows as selected.</summary>
+    private static async Task<string> Shown(Viewer3DPlugin plugin) =>
+        Unquote(await Eval(plugin, "document.querySelector('#details h2')?.textContent ?? ''"));
 
     private static CAEXDocument LoadContainer(string path)
     {
@@ -189,7 +278,18 @@ internal static class Program
         if (view?.CoreWebView2 == null) return;
         await using var file = File.Create(path);
         await view.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, file);
-        Report.Add("      picture: " + path);
+        Line("      picture: " + path);
+    }
+
+    private static void CaptureWpf(FrameworkElement element, string path)
+    {
+        var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)element.ActualWidth, (int)element.ActualHeight, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+        bitmap.Render(element);
+        var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+        encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+        using var file = File.Create(path);
+        encoder.Save(file);
+        Line("      picture: " + path);
     }
 
     private static WebView2? FindWebView(DependencyObject root)
