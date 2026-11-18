@@ -7,11 +7,26 @@ movable. Clicking a part selects its element and the other way round. Parts
 mounted on a machine through attachment interfaces follow it: a gripper on a
 robot flange, a robot on the carriage of a linear axis.
 
-Status: first version, working name. It grew out of a spike with the
-AutomationML e.V. example "Robot cell" (406 COLLADA files, 7.6 million
-triangles, 28 mechanisms, 981 joints), which it now opens in about 5 s. It also
-runs inside the AutomationML Editor as a plugin (see below); the plugin has been
-checked in a host of its own, not yet in the editor itself.
+It grew out of a spike with the AutomationML e.V. example "Robot cell" (406
+COLLADA files, 7.6 million triangles, 28 mechanisms, 981 joints), which it opens
+in about 5 s. It also runs inside the AutomationML Editor as a plugin, tested in
+the editor 6.4.3.5.
+
+## Installing the plugin
+
+1. In the AutomationML Editor (6.4 or later), open the PlugIn Manager
+   (**PlugIns** › **PlugIn Manager**), choose the source **PublicSource**, select
+   **AML3DViewer** among the available plugins and install it.
+2. Restart the editor and switch the plugin on once with **PlugIns** ›
+   **AML3DViewer** › **Activate**.
+
+The view runs in WebView2, which Windows 10 and 11 bring. Without a network,
+download the package from the [releases](https://github.com/hsu-aut/AMLViewer3D/releases)
+and add its folder as a package source in the PlugIn Manager; the package asks for
+nothing the editor does not bring. Changes from version to version:
+[CHANGELOG.md](CHANGELOG.md).
+
+## Running the page
 
 ```bash
 npm install
@@ -108,11 +123,14 @@ npm run build                                   # the page, packed with the plug
 dotnet test plugin/Aml.Editor.Plugin.Viewer3D.slnx
 ```
 
-The build writes `plugin/build/Aml.Editor.Plugin.Viewer3D/Debug/Aml.Editor.Plugin.Viewer3D.0.1.0.nupkg`;
+The build writes `plugin/build/Aml.Editor.Plugin.Viewer3D/Debug/Aml.Editor.Plugin.Viewer3D.<version>.nupkg`;
 install it through the editor's PlugIn Manager with that folder as a source. The
 package tests check what the editor needs and does not report when it is missing:
-no second copy of the contract or of Aml.Engine, the page with its worker script,
-relative asset paths, a display name the editor accepts.
+no second copy of the contract or of Aml.Engine, no declared dependencies (the
+PlugIn Manager would fetch them from the network), a build against the Aml.Engine
+of the oldest supported editor, the page with its worker script, relative asset
+paths, a display name the editor accepts, the tag the PlugIn Manager searches for.
+A Debug build opens the developer tools with F12; a Release build does not.
 
 `plugin/Aml.Editor.Plugin.Viewer3D.Probe` hosts the plugin in a window of its own
 the way the editor does and checks it end to end: the page loads the document,

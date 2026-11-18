@@ -6,11 +6,11 @@ AutomationML Editor. This file records where the work stands, why it is built
 the way it is, and what comes next, so that work can continue from here
 without the history.
 
-State on 2026-09-26: stages 1 to 3 are done, reviewed and tested in the real editor
+State on 2026-11-18: stages 1 to 3 are done, reviewed and tested in the real editor
 (6.4.3.5, driven by the scripts in `plugin/editor-test`, see "The test in the real
-editor").
-Nothing is pushed; the repository has no remote. "AML 3D Viewer" is a working
-title.
+editor"). The name is settled: AML 3D Viewer, repository `hsu-aut/AMLViewer3D`, package
+`Aml.Editor.Plugin.Viewer3D`, shown in the editor as "AML3DViewer". Version 0.1.0 is
+prepared for its first release (see "Releasing"); nothing is pushed yet.
 
 | Stage | Content | Status | Commits |
 |---|---|---|---|
@@ -236,6 +236,15 @@ git): `extract_bundle.py <AMLEditor.exe> <folder>` unpacks the single-file bundl
 - **Packaging:**
   - The Contract assembly must not be shipped; a second copy makes the editor skip the
     plugin silently. Aml.Engine and Aml.Editor.API come from the editor too.
+  - Nothing is declared as a dependency (`PrivateAssets` on every package reference): the
+    PlugIn Manager downloads declared dependencies from nuget.org next to the plugin, and
+    an installation without a network fails (found in AMLOpcUa).
+  - Aml.Engine is referenced as `[4.5.2, 5.0.0)`, without a wildcard, so the plugin is
+    built against 4.5.2, the version of editor 6.4.3.5. .NET does not load a plugin built
+    against a newer Aml.Engine than the editor's; 6.4.3.8 brings 4.5.3, which is not on
+    nuget.org yet. A package test reads the reference from the built assembly.
+  - The developer tools (F12) are on in Debug builds only. The remote debugging port the
+    editor scripts use works in Release builds as well (checked with the probe).
   - WebView2 is packed from `lib_manual/netcoreapp3.0`, as AMLOpcUa does.
   - The `DisplayName` becomes a WPF name and an XML element name (no dots, spaces or
     slashes).
@@ -251,13 +260,16 @@ npm run fetch:robots        # 30 robots of collada_robots and 3 from URDF into d
 npm run test:robots         # 58 tests on them (about 45 s)
 npm run build               # dist/web, packed into the plugin
 
-dotnet test plugin/Aml.Editor.Plugin.Viewer3D.Tests          # 32 tests, including the package
+dotnet test plugin/Aml.Editor.Plugin.Viewer3D.Tests          # 37 tests, including the package
 dotnet build plugin/Aml.Editor.Plugin.Viewer3D.slnx          # plugin, tests and probe
 plugin/Aml.Editor.Plugin.Viewer3D.Probe/bin/Debug/net8.0-windows7.0/Aml.Editor.Plugin.Viewer3D.Probe.exe <file.aml|.amlx> <output folder>
+dotnet build plugin/Aml.Editor.Plugin.Viewer3D.Probe -c Release   # the probe on the build that is released (bin/Release/...)
 ```
 
-- **The probe** hosts the plugin in a WPF window the way the editor does and runs 20
-  checks. It prints each result at once and writes pictures and `report.txt`.
+- **The probe** hosts the plugin in a WPF window the way the editor does and runs 21
+  checks. It prints each result at once and writes pictures and `report.txt`. Built in
+  Release, it runs on the same plugin build as the package; run it that way before a
+  release.
 - **Probe documents that passed:**
   - `test/fixtures/cell.aml`;
   - the robot cell as `data/robotcell/AmlDocument.aml` and as `test/output/robotcell.amlx`;
@@ -306,12 +318,11 @@ plugin/Aml.Editor.Plugin.Viewer3D.Probe/bin/Debug/net8.0-windows7.0/Aml.Editor.P
 1. **Open question (visible behaviour):** a selection in the document's own libraries
    (RoleClassLib and so on) clears the 3D selection, as the editor's attribute panel then
    shows no element either. Keeping the last element marked instead would be a small change.
-2. **Before publishing:**
-   - the final name;
-   - a remote (probably under hsu-aut, like AMLMcp and AMLOpcUa);
-   - check the CI file after the first push (untested);
-   - `CAEX_ClassModel_V.3.0.xsd` lies untracked in `test/fixtures`; clarify whether it
-     belongs there.
+2. **First release:** see "Releasing". The CI file is untested until the first push.
+   `CAEX_ClassModel_V.3.0.xsd` lies untracked in `test/fixtures`; it is not ours and stays
+   out of the repository until it is clear whether it belongs there.
+   The plugin is tested in editor 6.4.3.5 only; 6.4.3.8 (on .NET 10, Aml.Engine 4.5.3) is
+   out and wants the same round in the real editor.
 3. **More test files:** the robot cell is still the only public AML file with COLLADA;
    the robots above are COLLADA without AML. Whole cells from other tools (Process Simulate,
    NX MCD, FASTSUITE) could come through the AutomationML e.V. or a licence at the chair.
@@ -344,9 +355,22 @@ Installed through the PlugIn Manager from `plugin/build/Aml.Editor.Plugin.Viewer
 | layout in the narrow panel, status line, tab headers | failed, fixed in `d5d5ab4` and checked again in the editor |
 | log of a second editor process | could not write the shared file; now writes its own |
 
-Seen on the way, not in this plugin: AMLOpcUa 0.1.1 (installed) raises a
-NullReferenceException in `OpcUaPlugin.Watch` on every document load and unload of the
-robot cell, and the editor shows a message box each time.
+### Releasing
+
+`.github/workflows/ci.yml` builds and tests on every push to `main` and on tags `v*`. For a
+tag it also publishes a GitHub release with the package, and, once the repository variable
+`NUGET_USER` is set, pushes the package to nuget.org, where the editor's PublicSource finds
+it (trusted publishing, as AMLOpcUa does; the policy on nuget.org names this repository,
+the workflow file `ci.yml` and the environment `nuget.org`).
+
+1. Raise `Version` in `Aml.Editor.Plugin.Viewer3D.csproj` and `Metadata.xml` (a test
+   checks that they agree), move the entries under "Unreleased" in `CHANGELOG.md` to the
+   new version.
+2. `npm run build`, the plugin tests, and the probe built in Release on the robot cell
+   (`.aml` and `.amlx`).
+3. Push `main` and wait until the CI is green; then tag `v<version>` and push the tag.
+4. Download the package from the release and look into it; the CI built it, not the
+   local machine.
 
 ### Other 3D formats (considered, not started)
 
