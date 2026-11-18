@@ -14,17 +14,18 @@ the editor 6.4.3.5.
 
 ## Installing the plugin
 
-1. In the AutomationML Editor (6.4 or later), open the PlugIn Manager
-   (**PlugIns** › **PlugIn Manager**), choose the source **PublicSource**, select
-   **AML3DViewer** among the available plugins and install it.
-2. Restart the editor and switch the plugin on once with **PlugIns** ›
+1. Download `Aml.Editor.Plugin.Viewer3D.<version>.nupkg` from the
+   [releases](https://github.com/hsu-aut/AMLViewer3D/releases) into a folder of its own.
+2. In the AutomationML Editor (6.4 or later), open the PlugIn Manager
+   (**PlugIns** › **PlugIn Manager**), add that folder as a package source, tick the
+   source and press **Update**; then select **AML3DViewer** among the available
+   plugins and install it.
+3. Restart the editor and switch the plugin on once with **PlugIns** ›
    **AML3DViewer** › **Activate**.
 
-The view runs in WebView2, which Windows 10 and 11 bring. Without a network,
-download the package from the [releases](https://github.com/hsu-aut/AMLViewer3D/releases)
-and add its folder as a package source in the PlugIn Manager; the package asks for
-nothing the editor does not bring. Changes from version to version:
-[CHANGELOG.md](CHANGELOG.md).
+The view runs in WebView2, which Windows 10 and 11 bring. The package asks for
+nothing the editor does not bring, so the installation needs no network. Changes
+from version to version: [CHANGELOG.md](CHANGELOG.md).
 
 ## Running the page
 

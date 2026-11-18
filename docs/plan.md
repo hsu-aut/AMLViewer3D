@@ -361,7 +361,9 @@ Installed through the PlugIn Manager from `plugin/build/Aml.Editor.Plugin.Viewer
 tag it also publishes a GitHub release with the package, and, once the repository variable
 `NUGET_USER` is set, pushes the package to nuget.org, where the editor's PublicSource finds
 it (trusted publishing, as AMLOpcUa does; the policy on nuget.org names this repository,
-the workflow file `ci.yml` and the environment `nuget.org`).
+the workflow file `ci.yml` and the environment `nuget.org`). nuget.org comes later (decided
+2026-11-18); until then the README installs from the release. When it comes, the README's
+steps change to PublicSource, as in `plugin/Aml.Editor.Plugin.Viewer3D/README.md`.
 
 1. Raise `Version` in `Aml.Editor.Plugin.Viewer3D.csproj` and `Metadata.xml` (a test
    checks that they agree), move the entries under "Unreleased" in `CHANGELOG.md` to the
