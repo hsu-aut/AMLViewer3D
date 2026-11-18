@@ -83,6 +83,16 @@ internal static class Program
         Check(ready, "the page announced itself (ready)");
         if (!ready) return;
 
+        // The probe is built in the plugin's configuration: F12 opens the developer tools
+        // in a Debug build only.
+#if DEBUG
+        const bool debugBuild = true;
+#else
+        const bool debugBuild = false;
+#endif
+        Check(FindWebView(plugin)?.CoreWebView2?.Settings.AreDevToolsEnabled == debugBuild,
+            debugBuild ? "the developer tools are on (Debug build)" : "the developer tools are off (Release build)");
+
         // 2. The editor hands over a document.
         var document = file.EndsWith(".amlx", StringComparison.OrdinalIgnoreCase)
             ? LoadContainer(file)

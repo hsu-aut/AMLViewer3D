@@ -103,7 +103,13 @@ public sealed class ViewerView : IDisposable
         }
 
         var core = _view.CoreWebView2;
+        // F12 and "Inspect" only while developing; the remote debugging port that the
+        // editor tests use (plugin/editor-test) does not depend on this.
+#if DEBUG
         core.Settings.AreDevToolsEnabled = true;
+#else
+        core.Settings.AreDevToolsEnabled = false;
+#endif
         core.Settings.IsStatusBarEnabled = false;
         core.SetVirtualHostNameToFolderMapping(ViewerHost, assets, CoreWebView2HostResourceAccessKind.Allow);
 
