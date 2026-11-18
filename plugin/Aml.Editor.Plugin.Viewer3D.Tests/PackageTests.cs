@@ -89,6 +89,64 @@ public class PackageTests
         Assert.Contains(assets, e => Regex.IsMatch(e, @"/worker-[^/]+\.js$"));
     }
 
+    private static string Nuspec()
+    {
+        using var zip = ZipFile.OpenRead(Package());
+        using var reader = new StreamReader(zip.Entries.Single(e => e.FullName.EndsWith(".nuspec")).Open());
+        return reader.ReadToEnd();
+    }
+
+    [Fact]
+    public void ThePackageDeclaresNoDependencies()
+    {
+        // The PlugIn Manager downloads declared dependencies from nuget.org next to the
+        // plugin; without a network the installation fails. Everything the plugin needs is
+        // either packed or comes with the editor.
+        Assert.DoesNotContain("<dependency ", Nuspec());
+    }
+
+    [Fact]
+    public void ThePluginIsCompiledAgainstTheAmlEngineOfTheOldestEditor()
+    {
+        // The plugin runs with the editor's Aml.Engine, and .NET refuses a reference to a
+        // newer version than the one loaded. Editor 6.4.3.5 brings 4.5.2; a build against
+        // 4.5.3 would not load there.
+        using var zip = ZipFile.OpenRead(Package());
+        using var memory = new MemoryStream();
+        using (var entry = zip.GetEntry(Framework + Project + ".dll")!.Open()) entry.CopyTo(memory);
+        memory.Position = 0;
+        using var pe = new System.Reflection.PortableExecutable.PEReader(memory);
+        var metadata = System.Reflection.Metadata.PEReaderExtensions.GetMetadataReader(pe);
+        var engine = metadata.AssemblyReferences.Select(metadata.GetAssemblyReference)
+            .Single(r => metadata.GetString(r.Name) == "Aml.Engine");
+        Assert.True(engine.Version <= new Version(4, 5, 2, 0), $"compiled against Aml.Engine {engine.Version}");
+    }
+
+    [Fact]
+    public void TheEditorListsThePackage() =>
+        // The PlugIn Manager searches its sources for this tag.
+        Assert.Matches(@"<tags>[^<]*\bAMLEditorPlugin\.Net\b", Nuspec());
+
+    [Fact]
+    public void ThePackageNamesItsRepository()
+    {
+        var nuspec = Nuspec();
+        Assert.Contains("<projectUrl>https://github.com/hsu-aut/AMLViewer3D</projectUrl>", nuspec);
+        Assert.Contains("url=\"https://github.com/hsu-aut/AMLViewer3D\"", nuspec);
+    }
+
+    [Fact]
+    public void ThePackageHasItsOwnPageWithAbsoluteLinks()
+    {
+        // nuget.org shows README.md as the package's page; links relative to the
+        // repository lead nowhere there.
+        Assert.Contains("<readme>README.md</readme>", Nuspec());
+        using var zip = ZipFile.OpenRead(Package());
+        using var reader = new StreamReader(zip.GetEntry("README.md")!.Open());
+        var page = reader.ReadToEnd();
+        Assert.Empty(Regex.Matches(page, @"\]\((?!https://)[^)]*\)").Select(m => m.Value));
+    }
+
     [Fact]
     public void ThePackageCarriesLicenceAndNotices()
     {

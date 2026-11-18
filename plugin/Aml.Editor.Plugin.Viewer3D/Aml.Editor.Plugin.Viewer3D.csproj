@@ -15,7 +15,13 @@
     <Description>AutomationML Editor plugin that shows the open document with its COLLADA geometry and kinematics in 3D (IEC 62714-3). Selection follows the editor's tree and back; machine joints can be moved.</Description>
     <PackageTags>AMLEditor; AMLEditorPlugin.Net; AutomationML; COLLADA; 3D; kinematics</PackageTags>
     <Authors>Hamied Nabizada</Authors>
+    <Copyright>Copyright (c) 2026 Hamied Nabizada and contributors</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/hsu-aut/AMLViewer3D</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/hsu-aut/AMLViewer3D</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <!-- The page of the package on nuget.org; with absolute links, which the repository README lacks. -->
+    <PackageReadmeFile>README.md</PackageReadmeFile>
 
     <!-- Anchored at this file: SolutionDir is empty when the project is built
          on its own, and the package then lands in a second build tree. -->
@@ -38,13 +44,20 @@
     <PackageReference Include="Aml.Editor.Plugin.Contract" Version="[4.3.0]">
       <PrivateAssets>All</PrivateAssets>
     </PackageReference>
-    <!-- Provided by the editor at runtime. A range: the nuspec dependency it
-         produces has to accept whatever 4.x the editor ships. -->
-    <PackageReference Include="Aml.Engine" Version="[4.*, 5.0.0)">
+    <!-- Provided by the editor at run time: not copied (ExcludeAssets) and not
+         declared as dependencies of the package (PrivateAssets). Declared, the
+         PlugIn Manager downloads them from nuget.org next to the plugin, and
+         without a network the installation fails.
+         Aml.Engine: a range without a wildcard builds against its lowest
+         version, the one editor 6.4.3.5 brings. With "4.*" a build would take
+         the newest one on nuget.org and need an editor at least as new. -->
+    <PackageReference Include="Aml.Engine" Version="[4.5.2, 5.0.0)">
       <ExcludeAssets>runtime</ExcludeAssets>
+      <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Aml.Editor.API" Version="[2.3.0]">
       <ExcludeAssets>runtime</ExcludeAssets>
+      <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <!-- Not provided by the editor: packed below. Same version as AMLOpcUa. -->
     <PackageReference Include="Microsoft.Web.WebView2" Version="[1.0.4191.47]" GeneratePathProperty="true">
@@ -56,6 +69,7 @@
   <ItemGroup>
     <None Include="$(OutputPath)$(AssemblyName).deps.json" Pack="true" PackagePath="lib\$(TargetFramework)" />
     <None Include="Metadata.xml" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="README.md" Pack="true" PackagePath="\" />
     <None Include="..\..\LICENSE" Pack="true" PackagePath="" />
     <None Include="..\..\THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="" />
 
